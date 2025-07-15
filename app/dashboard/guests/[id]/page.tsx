@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase-client'
 import { getLocalISOString } from '@/lib/utils'
 import { ArrowLeft, Save, Trash2, User, Calendar, MapPin, Phone, Mail, FileText, BarChart3, Building2, RefreshCw } from 'lucide-react'

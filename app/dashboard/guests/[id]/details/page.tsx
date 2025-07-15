@@ -33,9 +33,9 @@ interface Reservation {
   status: string
   created_at: string
   rooms: {
-    number: string
-    type: string
-  }
+    room_number: string
+    room_type: string
+  }[]
 }
 
 interface GuestStats {
@@ -104,7 +104,7 @@ export default function GuestDetailsPage() {
           total_amount,
           status,
           created_at,
-          rooms!inner(number, type)
+          rooms!inner(room_number, room_type)
         `)
         .eq('guest_id', params.id)
         .order('check_in_date', { ascending: false })
@@ -165,7 +165,7 @@ export default function GuestDetailsPage() {
 
     // Tipo de quarto favorito
     const roomTypeCounts = reservationsData.reduce((acc: Record<string, number>, res) => {
-      const roomType = res.rooms?.type || 'Desconhecido'
+      const roomType = res.rooms?.[0]?.room_type || 'Desconhecido'
       acc[roomType] = (acc[roomType] || 0) + 1
       return acc
     }, {})
@@ -399,7 +399,7 @@ export default function GuestDetailsPage() {
                           </div>
                           <div>
                             <div className="font-medium text-gray-900">
-                              Quarto {reservation.rooms.number} - {reservation.rooms.type}
+                              Quarto {reservation.rooms?.[0]?.room_number} - {reservation.rooms?.[0]?.room_type}
                             </div>
                             <div className="text-sm text-gray-500">
                               {checkIn.toLocaleDateString('pt-BR')} - {checkOut.toLocaleDateString('pt-BR')} ({nights} noites)

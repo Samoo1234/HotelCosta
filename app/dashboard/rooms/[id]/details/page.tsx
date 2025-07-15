@@ -75,7 +75,7 @@ export default function RoomDetailsPage() {
           check_out_date,
           total_amount,
           status,
-          guests (
+          guests!inner (
             first_name,
             last_name,
             email
@@ -89,7 +89,7 @@ export default function RoomDetailsPage() {
       
       const formattedReservations = reservationsData?.map(res => ({
         ...res,
-        guest: res.guests
+        guest: Array.isArray(res.guests) ? res.guests[0] : res.guests
       })) || []
       
       setReservations(formattedReservations)

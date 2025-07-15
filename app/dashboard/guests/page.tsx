@@ -106,7 +106,7 @@ export default function GuestsPage() {
     return matchesSearch && matchesNationality && matchesDocumentType
   })
 
-  const nationalities = [...new Set(guests.map(guest => guest.nationality).filter(Boolean))]
+  const nationalities = [...new Set(guests.map(guest => guest.nationality).filter((n): n is string => Boolean(n)))]
   const documentTypes = [...new Set(guests.map(guest => guest.document_type))]
 
   const formatCurrency = (value: number) => {

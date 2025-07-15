@@ -127,7 +127,7 @@ export default function EditGuestPage() {
           check_in_date,
           check_out_date,
           total_amount,
-          rooms!inner(type)
+          rooms!inner(room_type)
         `)
         .eq('guest_id', params.id)
 
@@ -157,7 +157,7 @@ export default function EditGuestPage() {
 
         // Tipo de quarto favorito
         const roomTypeCounts = reservations.reduce((acc: Record<string, number>, res) => {
-          const roomType = res.rooms?.type || 'Desconhecido'
+          const roomType = res.rooms?.[0]?.room_type || 'Desconhecido'
           acc[roomType] = (acc[roomType] || 0) + 1
           return acc
         }, {})

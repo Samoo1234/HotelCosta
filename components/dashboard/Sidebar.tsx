@@ -10,6 +10,8 @@ import {
   Users,
   Calendar,
   CreditCard,
+  Package,
+  ShoppingCart,
   BarChart3,
   Settings,
   ChevronLeft,
@@ -42,6 +44,16 @@ const navigation = [
     name: 'Pagamentos',
     href: '/dashboard/payments',
     icon: CreditCard,
+  },
+  {
+    name: 'Produtos',
+    href: '/dashboard/products',
+    icon: Package,
+  },
+  {
+    name: 'Consumos',
+    href: '/dashboard/consumptions',
+    icon: ShoppingCart,
   },
   {
     name: 'Relatórios',

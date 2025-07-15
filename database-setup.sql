@@ -16,6 +16,12 @@ CREATE TABLE hotels (
   phone VARCHAR(20) NOT NULL,
   email VARCHAR(255) NOT NULL,
   description TEXT,
+  check_in_time TIME DEFAULT '14:00',
+  check_out_time TIME DEFAULT '12:00',
+  currency VARCHAR(3) DEFAULT 'BRL',
+  timezone VARCHAR(50) DEFAULT 'America/Sao_Paulo',
+  website VARCHAR(255),
+  tax_rate DECIMAL(5,2) DEFAULT 0.00,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

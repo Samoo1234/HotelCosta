@@ -166,6 +166,12 @@ export default function SettingsPage() {
             phone: hotelSettings.phone,
             email: hotelSettings.email,
             description: hotelSettings.description,
+            check_in_time: hotelSettings.check_in_time,
+            check_out_time: hotelSettings.check_out_time,
+            currency: hotelSettings.currency,
+            timezone: hotelSettings.timezone,
+            website: hotelSettings.website,
+            tax_rate: hotelSettings.tax_rate,
             updated_at: new Date().toISOString()
           })
           .eq('id', hotelSettings.id)
@@ -180,7 +186,13 @@ export default function SettingsPage() {
             address: hotelSettings.address,
             phone: hotelSettings.phone,
             email: hotelSettings.email,
-            description: hotelSettings.description
+            description: hotelSettings.description,
+            check_in_time: hotelSettings.check_in_time,
+            check_out_time: hotelSettings.check_out_time,
+            currency: hotelSettings.currency,
+            timezone: hotelSettings.timezone,
+            website: hotelSettings.website,
+            tax_rate: hotelSettings.tax_rate
           }])
           .select()
           .single()

@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase-client'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Save, Calendar, User, Bed, DollarSign, FileText } from 'lucide-react'
+import { createClient } from '@/lib/supabase-client'
+import { formatCurrency, calculateNights, generateReservationCode, formatDateForInput, getLocalISOString } from '@/lib/utils'
+import { ArrowLeft, Save, RefreshCw, User, Bed, Calendar, DollarSign, FileText } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 
@@ -230,7 +231,8 @@ export default function NewReservationPage() {
           check_out_date: formData.check_out_date || null,
           total_amount: formData.total_amount,
           status: formData.status,
-          special_requests: formData.special_requests || null
+          special_requests: formData.special_requests || null,
+          created_at: getLocalISOString()
         }])
 
       if (error) throw error
@@ -245,9 +247,10 @@ export default function NewReservationPage() {
     }
   }
 
-  const getGuestName = (guest: Guest) => {
+  const getGuestName = (guest: Guest | null | undefined) => {
+    if (!guest) return 'Hóspede indefinido'
     return guest.client_type === 'individual'
-      ? `${guest.first_name} ${guest.last_name}`
+      ? `${guest.first_name || ''} ${guest.last_name || ''}`.trim() || 'Nome não informado'
       : guest.trade_name || guest.company_name || 'Empresa'
   }
 
@@ -341,7 +344,7 @@ export default function NewReservationPage() {
                     className={`input ${errors.check_in_date ? 'border-red-500' : ''}`}
                     value={formData.check_in_date}
                     onChange={(e) => setFormData(prev => ({ ...prev, check_in_date: e.target.value }))}
-                    min={new Date().toISOString().split('T')[0]}
+                    min={formatDateForInput(new Date())}
                     required
                   />
                   {errors.check_in_date && (
@@ -359,7 +362,7 @@ export default function NewReservationPage() {
                     className={`input ${errors.check_out_date ? 'border-red-500' : ''}`}
                     value={formData.check_out_date}
                     onChange={(e) => setFormData(prev => ({ ...prev, check_out_date: e.target.value }))}
-                    min={formData.check_in_date || new Date().toISOString().split('T')[0]}
+                    min={formData.check_in_date || formatDateForInput(new Date())}
                   />
                   {errors.check_out_date && (
                     <p className="text-red-500 text-sm mt-1">{errors.check_out_date}</p>

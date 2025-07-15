@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase-client'
+import { formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, Calendar, User, Bed, DollarSign, Clock, Eye, Edit, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
@@ -110,9 +111,11 @@ export default function ReservationsPage() {
     }
   }
 
-  const getGuestName = (guest: Guest) => {
+  const getGuestName = (guest: Guest | null | undefined) => {
+    if (!guest) return 'Hóspede indefinido'
+    
     return guest.client_type === 'individual'
-      ? `${guest.first_name} ${guest.last_name}`
+      ? `${guest.first_name || ''} ${guest.last_name || ''}`.trim() || 'Nome não informado'
       : guest.trade_name || guest.company_name || 'Empresa'
   }
 
@@ -130,27 +133,29 @@ export default function ReservationsPage() {
   const filteredReservations = reservations.filter(reservation => {
     const matchesSearch = searchTerm === '' || 
       getGuestName(reservation.guest).toLowerCase().includes(searchTerm.toLowerCase()) ||
-      reservation.room.room_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      reservation.guest.email.toLowerCase().includes(searchTerm.toLowerCase())
+      (reservation.room?.room_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (reservation.guest?.email || '').toLowerCase().includes(searchTerm.toLowerCase())
 
     const matchesStatus = statusFilter === 'all' || reservation.status === statusFilter
 
     let matchesDate = true
     if (dateFilter !== 'all') {
+      // Use timezone-aware date for comparison
       const today = new Date()
-      const checkInDate = new Date(reservation.check_in_date)
+      const todayLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+      const checkInDate = new Date(reservation.check_in_date + 'T00:00:00')
       
       switch (dateFilter) {
         case 'today':
-          matchesDate = checkInDate.toDateString() === today.toDateString()
+          matchesDate = checkInDate.toDateString() === todayLocal.toDateString()
           break
         case 'week':
-          const weekFromNow = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
-          matchesDate = checkInDate >= today && checkInDate <= weekFromNow
+          const weekFromNow = new Date(todayLocal.getTime() + 7 * 24 * 60 * 60 * 1000)
+          matchesDate = checkInDate >= todayLocal && checkInDate <= weekFromNow
           break
         case 'month':
-          const monthFromNow = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate())
-          matchesDate = checkInDate >= today && checkInDate <= monthFromNow
+          const monthFromNow = new Date(todayLocal.getFullYear(), todayLocal.getMonth() + 1, todayLocal.getDate())
+          matchesDate = checkInDate >= todayLocal && checkInDate <= monthFromNow
           break
       }
     }
@@ -331,8 +336,8 @@ export default function ReservationsPage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredReservations.map((reservation) => {
-                  const checkIn = new Date(reservation.check_in_date)
-                  const checkOut = new Date(reservation.check_out_date)
+                  const checkIn = new Date(reservation.check_in_date + 'T00:00:00')
+                  const checkOut = new Date(reservation.check_out_date + 'T00:00:00')
                   const nights = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24))
                   
                   return (
@@ -347,7 +352,7 @@ export default function ReservationsPage() {
                               {getGuestName(reservation.guest)}
                             </div>
                             <div className="text-sm text-gray-500">
-                              {reservation.guest.email}
+                              {reservation.guest?.email || 'Email não informado'}
                             </div>
                           </div>
                         </div>
@@ -357,17 +362,17 @@ export default function ReservationsPage() {
                           <Bed className="h-4 w-4 text-gray-400 mr-2" />
                           <div>
                             <div className="text-sm font-medium text-gray-900">
-                              Quarto {reservation.room.room_number}
+                              Quarto {reservation.room?.room_number || 'N/A'}
                             </div>
                             <div className="text-sm text-gray-500">
-                              {reservation.room.room_type}
+                              {reservation.room?.room_type || 'Tipo não informado'}
                             </div>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">
-                          {checkIn.toLocaleDateString('pt-BR')} - {checkOut.toLocaleDateString('pt-BR')}
+                          {formatDate(checkIn)} - {formatDate(checkOut)}
                         </div>
                         <div className="text-sm text-gray-500">
                           {nights} noite{nights !== 1 ? 's' : ''}

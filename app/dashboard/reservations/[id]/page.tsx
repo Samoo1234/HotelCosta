@@ -6,6 +6,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { ArrowLeft, Save, Calendar, User, Bed, DollarSign, FileText, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
+import { formatCurrency, calculateNights, formatDate, createTimezoneAwareDate } from '@/lib/utils'
 
 interface Guest {
   id: string
@@ -72,7 +73,7 @@ export default function EditReservationPage() {
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [hotelSettings, setHotelSettings] = useState<{check_in_time: string, check_out_time: string} | null>(null)
+  const [hotelSettings, setHotelSettings] = useState<{check_in_time: string, check_out_time: string, timezone: string} | null>(null)
 
   useEffect(() => {
     if (params.id) {
@@ -143,21 +144,23 @@ export default function EditReservationPage() {
     try {
       const { data, error } = await supabase
         .from('hotels')
-        .select('check_in_time, check_out_time')
+        .select('check_in_time, check_out_time, timezone')
         .single()
 
       if (error) throw error
       
       setHotelSettings({
         check_in_time: data.check_in_time || '14:00',
-        check_out_time: data.check_out_time || '12:00'
+        check_out_time: data.check_out_time || '12:00',
+        timezone: data.timezone || 'America/Sao_Paulo'
       })
     } catch (error) {
       console.error('Error loading hotel settings:', error)
       // Definir valores padrão em caso de erro
       setHotelSettings({
         check_in_time: '14:00',
-        check_out_time: '12:00'
+        check_out_time: '12:00',
+        timezone: 'America/Sao_Paulo'
       })
     }
   }
@@ -202,8 +205,8 @@ export default function EditReservationPage() {
     const room = rooms.find(r => r.id === formData.room_id)
     if (!room) return
 
-    const checkInDateTime = new Date(`${formData.check_in_date}T${hotelSettings.check_in_time}:00`)
-    const checkOutDateTime = new Date(`${formData.check_out_date}T${hotelSettings.check_out_time}:00`)
+    const checkInDateTime = createTimezoneAwareDate(formData.check_in_date, hotelSettings.check_in_time, hotelSettings.timezone)
+    const checkOutDateTime = createTimezoneAwareDate(formData.check_out_date, hotelSettings.check_out_time, hotelSettings.timezone)
     const diffMs = checkOutDateTime.getTime() - checkInDateTime.getTime()
     const nights = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)))
     
@@ -289,16 +292,17 @@ export default function EditReservationPage() {
     }
   }
 
-  const getGuestName = (guest: Guest) => {
+  const getGuestName = (guest: Guest | null | undefined) => {
+    if (!guest) return 'Hóspede indefinido'
     return guest.client_type === 'individual'
-      ? `${guest.first_name} ${guest.last_name}`
+      ? `${guest.first_name || ''} ${guest.last_name || ''}`.trim() || 'Nome não informado'
       : guest.trade_name || guest.company_name || 'Empresa'
   }
 
   const nights = formData.check_in_date && formData.check_out_date && hotelSettings
     ? (() => {
-        const checkInDateTime = new Date(`${formData.check_in_date}T${hotelSettings.check_in_time}:00`)
-        const checkOutDateTime = new Date(`${formData.check_out_date}T${hotelSettings.check_out_time}:00`)
+        const checkInDateTime = createTimezoneAwareDate(formData.check_in_date, hotelSettings.check_in_time, hotelSettings.timezone)
+        const checkOutDateTime = createTimezoneAwareDate(formData.check_out_date, hotelSettings.check_out_time, hotelSettings.timezone)
         const diffMs = checkOutDateTime.getTime() - checkInDateTime.getTime()
         return Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)))
       })()

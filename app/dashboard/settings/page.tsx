@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase-client'
+import { getLocalISOString } from '@/lib/utils'
 import { 
   Settings, 
   Building2, 
@@ -172,7 +173,7 @@ export default function SettingsPage() {
             timezone: hotelSettings.timezone,
             website: hotelSettings.website,
             tax_rate: hotelSettings.tax_rate,
-            updated_at: new Date().toISOString()
+            updated_at: getLocalISOString(hotelSettings.timezone)
           })
           .eq('id', hotelSettings.id)
 

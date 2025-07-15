@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase-client'
 import { ArrowLeft, ShoppingCart, User, Building2, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatDate, getLocalISOString } from '@/lib/utils'
 
 interface Guest {
   id: string
@@ -88,6 +88,8 @@ export default function NewConsumptionPage() {
 
   const fetchData = async () => {
     try {
+      console.log('Iniciando carregamento de dados...')
+      
       // Buscar reservas ativas (checked_in)
       const { data: reservationsData, error: reservationsError } = await supabase
         .from('reservations')
@@ -99,7 +101,12 @@ export default function NewConsumptionPage() {
         .eq('status', 'checked_in')
         .order('room_id')
 
-      if (reservationsError) throw reservationsError
+      console.log('Reservas encontradas:', reservationsData?.length || 0)
+      console.log('Dados das reservas:', reservationsData)
+      if (reservationsError) {
+        console.error('Erro ao buscar reservas:', reservationsError)
+        throw reservationsError
+      }
       setReservations(reservationsData || [])
 
       // Buscar categorias
@@ -109,7 +116,11 @@ export default function NewConsumptionPage() {
         .eq('active', true)
         .order('display_order')
 
-      if (categoriesError) throw categoriesError
+      console.log('Categorias encontradas:', categoriesData?.length || 0)
+      if (categoriesError) {
+        console.error('Erro ao buscar categorias:', categoriesError)
+        throw categoriesError
+      }
       setCategories(categoriesData || [])
 
       // Buscar produtos ativos
@@ -123,11 +134,19 @@ export default function NewConsumptionPage() {
         .gt('stock_quantity', 0)
         .order('name')
 
-      if (productsError) throw productsError
+      console.log('Produtos encontrados:', productsData?.length || 0)
+      if (productsError) {
+        console.error('Erro ao buscar produtos:', productsError)
+        throw productsError
+      }
       setProducts(productsData || [])
     } catch (error) {
-      toast.error('Erro ao carregar dados')
-      console.error('Error:', error)
+      console.error('Erro ao carregar dados:', error)
+      if (error instanceof Error) {
+        toast.error(`Erro ao carregar dados: ${error.message}`)
+      } else {
+        toast.error('Erro ao carregar dados. Verifique a conexão.')
+      }
     } finally {
       setLoadingData(false)
     }
@@ -150,9 +169,10 @@ export default function NewConsumptionPage() {
     setFormData(prev => ({ ...prev, product_id: productId }))
   }
 
-  const getGuestName = (guest: Guest) => {
+  const getGuestName = (guest: Guest | null | undefined) => {
+    if (!guest) return 'Hóspede indefinido'
     return guest.client_type === 'individual'
-      ? `${guest.first_name} ${guest.last_name}`
+      ? `${guest.first_name || ''} ${guest.last_name || ''}`.trim() || 'Nome não informado'
       : guest.trade_name || guest.company_name || 'Empresa'
   }
 
@@ -192,7 +212,8 @@ export default function NewConsumptionPage() {
         payment_responsibility: formData.payment_responsibility,
         notes: formData.notes || null,
         registered_by: 'Recepção', // Pode ser dinâmico baseado no usuário logado
-        status: 'pending'
+        status: 'pending',
+        created_at: getLocalISOString()
       }
 
       const { error } = await supabase
@@ -251,15 +272,32 @@ export default function NewConsumptionPage() {
                   onChange={(e) => handleReservationChange(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   required
+                  disabled={reservations.length === 0}
                 >
-                  <option value="">Selecione um quarto...</option>
+                  <option value="">
+                    {reservations.length === 0 
+                      ? 'Nenhum quarto com check-in ativo encontrado' 
+                      : 'Selecione um quarto...'}
+                  </option>
                   {reservations.map(reservation => (
                     <option key={reservation.id} value={reservation.id}>
-                      Quarto {reservation.room.room_number} - {getGuestName(reservation.guest)}
-                      {reservation.guest.client_type === 'company' && ' (Empresa)'}
+                      Quarto {reservation.room?.room_number || 'N/A'} - {getGuestName(reservation.guest)}
+                      {reservation.guest?.client_type === 'company' && ' (Empresa)'}
                     </option>
                   ))}
                 </select>
+                
+                {reservations.length === 0 && (
+                  <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <div className="flex items-start">
+                      <AlertCircle className="h-4 w-4 text-yellow-600 mt-0.5 mr-2" />
+                      <div className="text-sm text-yellow-700">
+                        <p className="font-medium">Nenhum quarto disponível</p>
+                        <p>Não há quartos com check-in ativo no momento. Verifique se existem hóspedes hospedados.</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {selectedReservation && (
@@ -282,7 +320,7 @@ export default function NewConsumptionPage() {
                     <div>
                       <span className="font-medium text-gray-700">Check-in:</span>
                       <p className="text-gray-900">
-                        {new Date(selectedReservation.check_in_date).toLocaleDateString('pt-BR')}
+                        {formatDate(selectedReservation.check_in_date + 'T00:00:00')}
                       </p>
                     </div>
                   </div>

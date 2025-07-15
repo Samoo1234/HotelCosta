@@ -14,7 +14,7 @@ import {
   Filter,
   RefreshCw
 } from 'lucide-react'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatDateForInput } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
 interface ReportData {
@@ -288,7 +288,7 @@ export default function ReportsPage() {
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `relatorio-hotel-${new Date().toISOString().split('T')[0]}.csv`
+    a.download = `relatorio-hotel-${formatDateForInput(new Date())}.csv`
     a.click()
     window.URL.revokeObjectURL(url)
     

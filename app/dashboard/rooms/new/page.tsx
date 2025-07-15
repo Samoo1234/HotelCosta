@@ -2,8 +2,9 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase-client'
+import { getLocalISOString } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Save, X } from 'lucide-react'
+import { ArrowLeft, Save, X, Bed, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 
@@ -98,7 +99,8 @@ export default function NewRoomPage() {
           price_per_night: formData.price_per_night,
           status: formData.status,
           amenities: formData.amenities,
-          description: formData.description || null
+          description: formData.description || null,
+          created_at: getLocalISOString()
         }])
 
       if (error) throw error

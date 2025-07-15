@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-client'
-import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Save, Trash2, User, Calendar, MapPin, Phone, Mail, FileText, BarChart3 } from 'lucide-react'
+import { getLocalISOString } from '@/lib/utils'
+import { ArrowLeft, Save, Trash2, User, Calendar, MapPin, Phone, Mail, FileText, BarChart3, Building2, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 
@@ -288,7 +289,7 @@ export default function EditGuestPage() {
         document_number: guest.document_number.trim(),
         address: guest.address?.trim() || null,
         nationality: guest.nationality,
-        updated_at: new Date().toISOString()
+        updated_at: getLocalISOString()
       }
 
       if (guest.client_type === 'individual') {

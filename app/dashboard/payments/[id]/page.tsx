@@ -3,10 +3,10 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-client'
-import { ArrowLeft, CreditCard, Calendar, DollarSign, User, Bed, Trash2, CheckCircle, XCircle, AlertCircle, Clock, Edit } from 'lucide-react'
+import { getLocalISOString, formatCurrency, formatDateTime } from '@/lib/utils'
+import { ArrowLeft, CreditCard, Calendar, DollarSign, User, Bed, Trash2, CheckCircle, XCircle, AlertCircle, Clock, Edit, Save, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
-import { formatCurrency } from '@/lib/utils'
 
 interface Payment {
   id: string
@@ -149,8 +149,8 @@ export default function PaymentDetailsPage({ params }: { params: { id: string } 
           payment_method: editData.payment_method,
           payment_status: editData.payment_status,
           transaction_id: editData.transaction_id || null,
-          payment_date: new Date(editData.payment_date).toISOString(),
-          updated_at: new Date().toISOString()
+          payment_date: getLocalISOString(),
+          updated_at: getLocalISOString()
         })
         .eq('id', params.id)
 

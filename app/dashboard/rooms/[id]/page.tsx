@@ -1,12 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase-client'
 import { useRouter, useParams } from 'next/navigation'
+import { createClient } from '@/lib/supabase-client'
+import { getLocalISOString, formatCurrency, getStatusColor, getStatusText } from '@/lib/utils'
 import { ArrowLeft, Save, X, Trash2, Eye } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
-import { formatCurrency, getStatusColor, getStatusText } from '@/lib/utils'
 
 interface Room {
   id: string
@@ -155,7 +155,7 @@ export default function EditRoomPage() {
           status: formData.status,
           amenities: formData.amenities,
           description: formData.description || null,
-          updated_at: new Date().toISOString()
+          updated_at: getLocalISOString()
         })
         .eq('id', params.id)
 

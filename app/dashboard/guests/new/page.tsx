@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { useRouter } from 'next/navigation'
+import { getLocalISOString } from '@/lib/utils'
 import { ArrowLeft, Save, X, User } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
@@ -195,6 +196,9 @@ export default function NewGuestPage() {
         insertData.trade_name = formData.trade_name.trim() || null
         insertData.contact_person = formData.contact_person.trim()
       }
+
+      // Adicionar created_at com timezone local
+      insertData.created_at = getLocalISOString()
 
       const { error } = await supabase
         .from('guests')

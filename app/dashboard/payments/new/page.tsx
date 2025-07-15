@@ -3,10 +3,10 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-client'
+import { getLocalISOString, formatCurrency, formatDateForInput } from '@/lib/utils'
 import { ArrowLeft, CreditCard, Calendar, DollarSign, User, Bed } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
-import { formatCurrency } from '@/lib/utils'
 
 interface Reservation {
   id: string
@@ -65,7 +65,7 @@ export default function NewPaymentPage() {
     payment_method: 'credit_card',
     payment_status: 'completed',
     transaction_id: '',
-    payment_date: new Date().toISOString().split('T')[0]
+    payment_date: formatDateForInput(new Date())
   })
 
   useEffect(() => {
@@ -136,7 +136,7 @@ export default function NewPaymentPage() {
           payment_method: formData.payment_method,
           payment_status: formData.payment_status,
           transaction_id: formData.transaction_id || null,
-          payment_date: new Date(formData.payment_date).toISOString()
+          payment_date: getLocalISOString()
         })
 
       if (error) throw error

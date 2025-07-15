@@ -72,11 +72,13 @@ export default function EditReservationPage() {
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [hotelSettings, setHotelSettings] = useState<{check_in_time: string, check_out_time: string} | null>(null)
 
   useEffect(() => {
     if (params.id) {
       fetchReservation()
       fetchInitialData()
+      loadHotelSettings()
     }
   }, [params.id])
 
@@ -137,6 +139,29 @@ export default function EditReservationPage() {
     }
   }
 
+  const loadHotelSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('hotels')
+        .select('check_in_time, check_out_time')
+        .single()
+
+      if (error) throw error
+      
+      setHotelSettings({
+        check_in_time: data.check_in_time || '14:00',
+        check_out_time: data.check_out_time || '12:00'
+      })
+    } catch (error) {
+      console.error('Error loading hotel settings:', error)
+      // Definir valores padrão em caso de erro
+      setHotelSettings({
+        check_in_time: '14:00',
+        check_out_time: '12:00'
+      })
+    }
+  }
+
   const checkRoomAvailability = async () => {
     if (!formData.check_in_date || !formData.check_out_date || !reservation) return
 
@@ -170,16 +195,17 @@ export default function EditReservationPage() {
   }
 
   const calculateTotalAmount = () => {
-    if (!formData.room_id || !formData.check_in_date || !formData.check_out_date) {
+    if (!formData.room_id || !formData.check_in_date || !formData.check_out_date || !hotelSettings) {
       return
     }
 
     const room = rooms.find(r => r.id === formData.room_id)
     if (!room) return
 
-    const checkIn = new Date(formData.check_in_date)
-    const checkOut = new Date(formData.check_out_date)
-    const nights = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24))
+    const checkInDateTime = new Date(`${formData.check_in_date}T${hotelSettings.check_in_time}:00`)
+    const checkOutDateTime = new Date(`${formData.check_out_date}T${hotelSettings.check_out_time}:00`)
+    const diffMs = checkOutDateTime.getTime() - checkInDateTime.getTime()
+    const nights = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)))
     
     if (nights > 0) {
       const total = nights * room.price_per_night
@@ -269,8 +295,13 @@ export default function EditReservationPage() {
       : guest.trade_name || guest.company_name || 'Empresa'
   }
 
-  const nights = formData.check_in_date && formData.check_out_date 
-    ? Math.ceil((new Date(formData.check_out_date).getTime() - new Date(formData.check_in_date).getTime()) / (1000 * 60 * 60 * 24))
+  const nights = formData.check_in_date && formData.check_out_date && hotelSettings
+    ? (() => {
+        const checkInDateTime = new Date(`${formData.check_in_date}T${hotelSettings.check_in_time}:00`)
+        const checkOutDateTime = new Date(`${formData.check_out_date}T${hotelSettings.check_out_time}:00`)
+        const diffMs = checkOutDateTime.getTime() - checkInDateTime.getTime()
+        return Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)))
+      })()
     : 0
 
   if (!reservation) {

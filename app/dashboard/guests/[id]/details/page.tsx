@@ -73,14 +73,53 @@ export default function GuestDetailsPage() {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
   const [guest, setGuest] = useState<Guest | null>(null)
-  const [reservations, setReservations] = useState<Reservation[]>([])
+  const [reservations, setReservations] = useState<Reservation[]>([])  
+  const [hotelSettings, setHotelSettings] = useState<{check_in_time: string, check_out_time: string} | null>(null)
   const [stats, setStats] = useState<GuestStats | null>(null)
 
   useEffect(() => {
     if (params.id) {
       fetchGuestData()
+      loadHotelSettings()
     }
   }, [params.id])
+
+  const loadHotelSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('hotels')
+        .select('check_in_time, check_out_time')
+        .single()
+
+      if (error) throw error
+      
+      setHotelSettings({
+        check_in_time: data.check_in_time || '14:00',
+        check_out_time: data.check_out_time || '12:00'
+      })
+    } catch (error) {
+      console.error('Error loading hotel settings:', error)
+      // Definir valores padrão em caso de erro
+      setHotelSettings({
+        check_in_time: '14:00',
+        check_out_time: '12:00'
+      })
+    }
+  }
+
+  const calculateNights = (checkIn: string, checkOut: string) => {
+    if (!hotelSettings) {
+      // Fallback para o cálculo antigo se as configurações não estiverem carregadas
+      const checkInDate = new Date(checkIn)
+      const checkOutDate = new Date(checkOut)
+      return Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24))
+    }
+    
+    const checkInDateTime = new Date(`${checkIn}T${hotelSettings.check_in_time}:00`)
+    const checkOutDateTime = new Date(`${checkOut}T${hotelSettings.check_out_time}:00`)
+    const diffMs = checkOutDateTime.getTime() - checkInDateTime.getTime()
+    return Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)))
+  }
 
   const fetchGuestData = async () => {
     try {
@@ -154,9 +193,7 @@ export default function GuestDetailsPage() {
     // Calcular total de noites e duração média
     let totalNights = 0
     reservationsData.forEach(res => {
-      const checkIn = new Date(res.check_in_date)
-      const checkOut = new Date(res.check_out_date)
-      const nights = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24))
+      const nights = calculateNights(res.check_in_date, res.check_out_date)
       totalNights += nights
     })
     

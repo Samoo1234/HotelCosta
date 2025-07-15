@@ -44,6 +44,7 @@ export default function NewReservationPage() {
   const [guests, setGuests] = useState<Guest[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
   const [availableRooms, setAvailableRooms] = useState<Room[]>([])
+  const [hotelSettings, setHotelSettings] = useState<{check_in_time: string, check_out_time: string} | null>(null)
   const [formData, setFormData] = useState<ReservationFormData>({
     guest_id: '',
     room_id: '',
@@ -57,10 +58,11 @@ export default function NewReservationPage() {
 
   useEffect(() => {
     fetchInitialData()
+    loadHotelSettings()
   }, [])
 
   useEffect(() => {
-    if (formData.check_in_date && formData.check_out_date) {
+    if (formData.check_in_date) {
       checkRoomAvailability()
     }
   }, [formData.check_in_date, formData.check_out_date])
@@ -84,16 +86,48 @@ export default function NewReservationPage() {
     }
   }
 
+  const loadHotelSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('hotels')
+        .select('check_in_time, check_out_time')
+        .limit(1)
+        .single()
+
+      if (error) throw error
+      setHotelSettings(data)
+    } catch (error) {
+      console.error('Error loading hotel settings:', error)
+      // Usar valores padrão se não conseguir carregar
+      setHotelSettings({ check_in_time: '14:00', check_out_time: '12:00' })
+    }
+  }
+
   const checkRoomAvailability = async () => {
-    if (!formData.check_in_date || !formData.check_out_date) return
+    if (!formData.check_in_date) return
 
     try {
-      // Buscar reservas que conflitam com as datas selecionadas
-      const { data: conflictingReservations, error } = await supabase
+      let conflictQuery = supabase
         .from('reservations')
-        .select('room_id')
+        .select('room_id, check_in_date, check_out_date')
         .neq('status', 'cancelled')
-        .or(`and(check_in_date.lte.${formData.check_out_date},check_out_date.gte.${formData.check_in_date})`)
+        .neq('status', 'checked_out')
+      
+      // Se tem data de check-out, verificar conflitos normais
+      if (formData.check_out_date) {
+        conflictQuery = conflictQuery
+          .or(`and(check_in_date.lte.${formData.check_out_date},check_out_date.gte.${formData.check_in_date})`)
+      } else {
+        // Se não tem check-out (estadia prolongada), verificar se há conflitos no check-in
+        // Buscar reservas que:
+        // 1. Começam no mesmo dia ou depois
+        // 2. Ou que ainda estão em aberto (check_out_date null)
+        // 3. Ou que terminam depois do nosso check-in
+        conflictQuery = conflictQuery
+          .or(`check_in_date.eq.${formData.check_in_date},and(check_in_date.lte.${formData.check_in_date},or(check_out_date.is.null,check_out_date.gt.${formData.check_in_date}))`)
+      }
+
+      const { data: conflictingReservations, error } = await conflictQuery
 
       if (error) throw error
 
@@ -115,7 +149,7 @@ export default function NewReservationPage() {
   }
 
   const calculateTotalAmount = () => {
-    if (!formData.room_id || !formData.check_in_date || !formData.check_out_date) {
+    if (!formData.room_id || !formData.check_in_date || !hotelSettings) {
       setFormData(prev => ({ ...prev, total_amount: 0 }))
       return
     }
@@ -123,14 +157,27 @@ export default function NewReservationPage() {
     const room = rooms.find(r => r.id === formData.room_id)
     if (!room) return
 
-    const checkIn = new Date(formData.check_in_date)
-    const checkOut = new Date(formData.check_out_date)
-    const nights = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24))
-    
-    if (nights > 0) {
-      const total = nights * room.price_per_night
-      setFormData(prev => ({ ...prev, total_amount: total }))
+    // Se não tem check-out, calcular apenas 1 diária (estadia em aberto)
+    if (!formData.check_out_date) {
+      setFormData(prev => ({ ...prev, total_amount: room.price_per_night }))
+      return
     }
+
+    // Criar datas com horários configurados pelo administrador
+    const checkInDateTime = new Date(`${formData.check_in_date}T${hotelSettings.check_in_time}:00`)
+    const checkOutDateTime = new Date(`${formData.check_out_date}T${hotelSettings.check_out_time}:00`)
+    
+    // Calcular diferença em milissegundos
+    const diffMs = checkOutDateTime.getTime() - checkInDateTime.getTime()
+    
+    // Converter para dias (considerando que uma diária = 24 horas)
+    const nights = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+    
+    // Garantir pelo menos 1 diária
+    const finalNights = Math.max(1, nights)
+    
+    const total = finalNights * room.price_per_night
+    setFormData(prev => ({ ...prev, total_amount: total }))
   }
 
   const validateForm = () => {
@@ -139,17 +186,26 @@ export default function NewReservationPage() {
     if (!formData.guest_id) newErrors.guest_id = 'Selecione um hóspede'
     if (!formData.room_id) newErrors.room_id = 'Selecione um quarto'
     if (!formData.check_in_date) newErrors.check_in_date = 'Data de check-in é obrigatória'
-    if (!formData.check_out_date) newErrors.check_out_date = 'Data de check-out é obrigatória'
+    // Check-out é opcional para permitir estadias prolongadas
     
     if (formData.check_in_date && formData.check_out_date) {
-      const checkIn = new Date(formData.check_in_date)
-      const checkOut = new Date(formData.check_out_date)
+      const checkIn = new Date(formData.check_in_date + 'T00:00:00')
+      const checkOut = new Date(formData.check_out_date + 'T00:00:00')
       
       if (checkOut <= checkIn) {
         newErrors.check_out_date = 'Data de check-out deve ser posterior ao check-in'
       }
+    }
+    
+    if (formData.check_in_date) {
+      const checkIn = new Date(formData.check_in_date + 'T00:00:00')
+      const today = new Date()
       
-      if (checkIn < new Date(new Date().setHours(0, 0, 0, 0))) {
+      // Permitir reservas para hoje independente do horário
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+      
+      // Se é uma data anterior a hoje, não permitir
+      if (checkIn < todayStart) {
         newErrors.check_in_date = 'Data de check-in não pode ser no passado'
       }
     }
@@ -171,7 +227,7 @@ export default function NewReservationPage() {
           guest_id: formData.guest_id,
           room_id: formData.room_id,
           check_in_date: formData.check_in_date,
-          check_out_date: formData.check_out_date,
+          check_out_date: formData.check_out_date || null,
           total_amount: formData.total_amount,
           status: formData.status,
           special_requests: formData.special_requests || null
@@ -195,9 +251,17 @@ export default function NewReservationPage() {
       : guest.trade_name || guest.company_name || 'Empresa'
   }
 
-  const nights = formData.check_in_date && formData.check_out_date 
-    ? Math.ceil((new Date(formData.check_out_date).getTime() - new Date(formData.check_in_date).getTime()) / (1000 * 60 * 60 * 24))
-    : 0
+  const getNights = () => {
+    if (formData.check_in_date && formData.check_out_date && hotelSettings) {
+      const checkInDateTime = new Date(`${formData.check_in_date}T${hotelSettings.check_in_time}:00`)
+      const checkOutDateTime = new Date(`${formData.check_out_date}T${hotelSettings.check_out_time}:00`)
+      const diffMs = checkOutDateTime.getTime() - checkInDateTime.getTime()
+      return Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)))
+    }
+    return formData.check_in_date ? 1 : 0 // Se só tem check-in, mostrar 1 diária
+  }
+
+  const nights = getNights()
 
   return (
     <div className="space-y-6">
@@ -287,7 +351,8 @@ export default function NewReservationPage() {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Data de Check-out *
+                    Data de Check-out
+                    <span className="text-xs text-gray-500 ml-1">(opcional para estadias prolongadas)</span>
                   </label>
                   <input
                     type="date"
@@ -295,10 +360,14 @@ export default function NewReservationPage() {
                     value={formData.check_out_date}
                     onChange={(e) => setFormData(prev => ({ ...prev, check_out_date: e.target.value }))}
                     min={formData.check_in_date || new Date().toISOString().split('T')[0]}
-                    required
                   />
                   {errors.check_out_date && (
                     <p className="text-red-500 text-sm mt-1">{errors.check_out_date}</p>
+                  )}
+                  {!formData.check_out_date && formData.check_in_date && (
+                    <p className="text-blue-600 text-xs mt-1">
+                      💡 Deixe em branco para estadia em aberto (pode ser definida posteriormente)
+                    </p>
                   )}
                 </div>
               </div>
@@ -307,6 +376,21 @@ export default function NewReservationPage() {
                 <div className="mt-4 p-3 bg-blue-50 rounded-lg">
                   <p className="text-sm text-blue-700">
                     <strong>{nights}</strong> noite{nights !== 1 ? 's' : ''} selecionada{nights !== 1 ? 's' : ''}
+                    {formData.check_in_date && !formData.check_out_date && hotelSettings && (
+                      <span className="block mt-1 text-xs">
+                        ⏰ Diária conta de {hotelSettings.check_in_time} a {hotelSettings.check_out_time} do dia seguinte
+                      </span>
+                    )}
+                  </p>
+                </div>
+              )}
+              
+              {formData.check_in_date && !formData.check_out_date && (
+                <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-sm text-amber-700">
+                    <strong>📅 Estadia em Aberto:</strong> Check-out pode ser definido posteriormente.
+                    <br />
+                    <span className="text-xs">Valor inicial: 1 diária. Será ajustado conforme a duração real da estadia.</span>
                   </p>
                 </div>
               )}
@@ -320,10 +404,10 @@ export default function NewReservationPage() {
               </h2>
               
               <div className="space-y-4">
-                {!formData.check_in_date || !formData.check_out_date ? (
+                {!formData.check_in_date ? (
                   <div className="text-center py-8 text-gray-500">
                     <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                    <p>Selecione as datas para ver os quartos disponíveis</p>
+                    <p>Selecione a data de check-in para ver os quartos disponíveis</p>
                   </div>
                 ) : availableRooms.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
@@ -427,21 +511,25 @@ export default function NewReservationPage() {
                   </div>
                 )}
                 
-                {formData.check_in_date && formData.check_out_date && (
+                {formData.check_in_date && (
                   <div>
                     <p className="text-sm text-gray-600">Período</p>
                     <p className="font-medium">
-                      {new Date(formData.check_in_date).toLocaleDateString('pt-BR')} - {new Date(formData.check_out_date).toLocaleDateString('pt-BR')}
+                      {new Date(formData.check_in_date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                      {formData.check_out_date ? ` - ${new Date(formData.check_out_date + 'T00:00:00').toLocaleDateString('pt-BR')}` : ' (em aberto)'}
                     </p>
                     <p className="text-sm text-gray-500">
                       {nights} noite{nights !== 1 ? 's' : ''}
+                      {!formData.check_out_date && ' (inicial)'}
                     </p>
                   </div>
                 )}
                 
                 {formData.room_id && nights > 0 && (
                   <div>
-                    <p className="text-sm text-gray-600">Valor por noite</p>
+                    <p className="text-sm text-gray-600">
+                      {formData.check_out_date ? 'Valor por noite' : 'Valor da diária (inicial)'}
+                    </p>
                     <p className="font-medium">
                       R$ {(rooms.find(r => r.id === formData.room_id)?.price_per_night || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </p>
@@ -461,7 +549,7 @@ export default function NewReservationPage() {
             
             <button
               type="submit"
-              disabled={loading || !formData.guest_id || !formData.room_id || !formData.check_in_date || !formData.check_out_date}
+              disabled={loading || !formData.guest_id || !formData.room_id || !formData.check_in_date}
               className="btn-primary w-full"
             >
               {loading ? (

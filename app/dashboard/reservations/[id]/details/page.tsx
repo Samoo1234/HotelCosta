@@ -76,10 +76,12 @@ export default function ReservationDetailsPage() {
   const [loading, setLoading] = useState(true)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [hotelSettings, setHotelSettings] = useState<{check_in_time: string, check_out_time: string} | null>(null)
 
   useEffect(() => {
     if (params.id) {
       fetchReservation()
+      loadHotelSettings()
     }
   }, [params.id])
 
@@ -105,6 +107,29 @@ export default function ReservationDetailsPage() {
       router.push('/dashboard/reservations')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadHotelSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('hotels')
+        .select('check_in_time, check_out_time')
+        .single()
+
+      if (error) throw error
+      
+      setHotelSettings({
+        check_in_time: data.check_in_time || '14:00',
+        check_out_time: data.check_out_time || '12:00'
+      })
+    } catch (error) {
+      console.error('Error loading hotel settings:', error)
+      // Definir valores padrão em caso de erro
+      setHotelSettings({
+        check_in_time: '14:00',
+        check_out_time: '12:00'
+      })
     }
   }
 
@@ -138,9 +163,17 @@ export default function ReservationDetailsPage() {
   }
 
   const getNights = (checkIn: string, checkOut: string) => {
-    const checkInDate = new Date(checkIn)
-    const checkOutDate = new Date(checkOut)
-    return Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24))
+    if (!hotelSettings) {
+      // Fallback para o cálculo antigo se as configurações não estiverem carregadas
+      const checkInDate = new Date(checkIn)
+      const checkOutDate = new Date(checkOut)
+      return Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24))
+    }
+    
+    const checkInDateTime = new Date(`${checkIn}T${hotelSettings.check_in_time}:00`)
+    const checkOutDateTime = new Date(`${checkOut}T${hotelSettings.check_out_time}:00`)
+    const diffMs = checkOutDateTime.getTime() - checkInDateTime.getTime()
+    return Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)))
   }
 
   const getDaysUntilCheckIn = (checkInDate: string) => {

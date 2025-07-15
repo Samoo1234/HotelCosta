@@ -183,7 +183,7 @@ export default function ReservationsPage() {
             Gerencie todas as reservas do hotel
           </p>
         </div>
-        <Link href="/dashboard/reservations/new" className="btn-primary">
+        <Link href="/dashboard/reservations/new" className="btn-primary flex items-center">
           <Plus className="h-4 w-4 mr-2" />
           Nova Reserva
         </Link>

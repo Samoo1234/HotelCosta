@@ -388,6 +388,8 @@ export default function ReservationDetailsPage() {
   
   // Função para obter status do pagamento consolidado
   const getPaymentStatusBadge = () => {
+    if (!reservation) return null
+    
     const hasUnpaidConsumptions = consumptions.some(c => c.status === 'pending')
     const isCheckedOut = reservation.status === 'checked_out'
     

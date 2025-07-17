@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-client'
-import { formatCurrency, calculateNights, generateReservationCode, formatDateForInput, getLocalISOString } from '@/lib/utils'
+import { formatCurrency, calculateNights, generateReservationCode, formatDateForInput, getLocalISOString, createTimezoneAwareDate } from '@/lib/utils'
 import { ArrowLeft, Save, RefreshCw, User, Bed, Calendar, DollarSign, FileText } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
@@ -150,35 +150,53 @@ export default function NewReservationPage() {
   }
 
   const calculateTotalAmount = () => {
-    if (!formData.room_id || !formData.check_in_date || !hotelSettings) {
-      setFormData(prev => ({ ...prev, total_amount: 0 }))
-      return
+    try {
+      if (!formData.room_id || !formData.check_in_date || !hotelSettings) {
+        console.log('Faltam dados básicos para calcular valor:', { room_id: formData.room_id, check_in_date: formData.check_in_date, hotelSettings })
+        setFormData(prev => ({ ...prev, total_amount: 0 }))
+        return
+      }
+
+      const room = rooms.find(r => r.id === formData.room_id)
+      if (!room) {
+        console.log('Quarto não encontrado:', formData.room_id)
+        return
+      }
+
+      // Se não tem check-out, calcular apenas 1 diária (estadia em aberto)
+      if (!formData.check_out_date) {
+        console.log('Estadia em aberto, usando 1 diária:', room.price_per_night)
+        setFormData(prev => ({ ...prev, total_amount: room.price_per_night }))
+        return
+      }
+
+      // Método mais seguro de calcular noites - usando só as datas sem complicar com timezone
+      // para evitar erros no cálculo do valor total
+      const simpleCheckIn = new Date(formData.check_in_date + 'T00:00:00')
+      const simpleCheckOut = new Date(formData.check_out_date + 'T00:00:00')
+      const diffTime = simpleCheckOut.getTime() - simpleCheckIn.getTime()
+      const simpleDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+      const simpleNights = Math.max(1, simpleDays)
+      
+      // Calculamos o valor sem depender das funções de timezone que podem estar causando problemas
+      const total = simpleNights * room.price_per_night
+      console.log('Valor calculado:', { 
+        noites: simpleNights, 
+        valorDiaria: room.price_per_night, 
+        valorTotal: total 
+      })
+      
+      // Definir o valor total no estado
+      setFormData(prev => ({ ...prev, total_amount: total }))
+    } catch (error) {
+      // Em caso de erro, garantir um valor padrão para não bloquear a criação da reserva
+      console.error('Erro ao calcular valor total:', error)
+      const room = rooms.find(r => r.id === formData.room_id)
+      if (room) {
+        // Usar pelo menos o valor de uma diária
+        setFormData(prev => ({ ...prev, total_amount: room.price_per_night }))
+      }
     }
-
-    const room = rooms.find(r => r.id === formData.room_id)
-    if (!room) return
-
-    // Se não tem check-out, calcular apenas 1 diária (estadia em aberto)
-    if (!formData.check_out_date) {
-      setFormData(prev => ({ ...prev, total_amount: room.price_per_night }))
-      return
-    }
-
-    // Criar datas com horários configurados pelo administrador
-    const checkInDateTime = new Date(`${formData.check_in_date}T${hotelSettings.check_in_time}:00`)
-    const checkOutDateTime = new Date(`${formData.check_out_date}T${hotelSettings.check_out_time}:00`)
-    
-    // Calcular diferença em milissegundos
-    const diffMs = checkOutDateTime.getTime() - checkInDateTime.getTime()
-    
-    // Converter para dias (considerando que uma diária = 24 horas)
-    const nights = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
-    
-    // Garantir pelo menos 1 diária
-    const finalNights = Math.max(1, nights)
-    
-    const total = finalNights * room.price_per_night
-    setFormData(prev => ({ ...prev, total_amount: total }))
   }
 
   const validateForm = () => {
@@ -188,6 +206,13 @@ export default function NewReservationPage() {
     if (!formData.room_id) newErrors.room_id = 'Selecione um quarto'
     if (!formData.check_in_date) newErrors.check_in_date = 'Data de check-in é obrigatória'
     // Check-out é opcional para permitir estadias prolongadas
+  
+    // Validar total_amount para evitar valores nulos ou zero
+    if (!formData.total_amount || formData.total_amount <= 0) {
+      newErrors.total_amount = 'Valor total inválido'
+      // Recalcular o total antes de retornar erro
+      calculateTotalAmount()
+    }
     
     if (formData.check_in_date && formData.check_out_date) {
       const checkIn = new Date(formData.check_in_date + 'T00:00:00')
@@ -217,31 +242,83 @@ export default function NewReservationPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    console.log('Iniciando submissão do formulário')
     
-    if (!validateForm()) return
+    // Forçar recálculo do valor total antes da validação final
+    try {
+      calculateTotalAmount()
+      console.log('Valor total recalculado:', formData.total_amount)
+    } catch (error) {
+      console.error('Erro ao calcular valor total na submissão:', error)
+    }
+    
+    // Verificar campos obrigatórios diretamente
+    if (!formData.guest_id || !formData.room_id || !formData.check_in_date) {
+      console.error('Campos obrigatórios faltando:', { 
+        guest_id: formData.guest_id, 
+        room_id: formData.room_id, 
+        check_in_date: formData.check_in_date 
+      })
+      toast.error('Preencha todos os campos obrigatórios')
+      return
+    }
+    
+    // Verificar o valor diretamente
+    if (!formData.total_amount || formData.total_amount <= 0) {
+      console.error('Valor total inválido:', formData.total_amount)
+      
+      // Tentar corrigir o valor automaticamente antes de desistir
+      const room = rooms.find(r => r.id === formData.room_id)
+      if (room && room.price_per_night > 0) {
+        const defaultValue = room.price_per_night
+        console.log('Corrigindo valor para diária padrão:', defaultValue)
+        setFormData(prev => ({ ...prev, total_amount: defaultValue }))
+        toast.success('Valor corrigido automaticamente para diária padrão')
+      } else {
+        toast.error('Erro de valor: O valor total da reserva não pode ser zero')
+        return
+      }
+    }
 
+    // Prosseguir com a criação da reserva
     setLoading(true)
     try {
-      const { error } = await supabase
+      console.log('Enviando dados para o servidor:', {
+        guest_id: formData.guest_id,
+        room_id: formData.room_id,
+        check_in_date: formData.check_in_date,
+        check_out_date: formData.check_out_date || null,
+        total_amount: formData.total_amount,
+        status: formData.status
+      })
+      
+      const { data, error } = await supabase
         .from('reservations')
-        .insert([{
-          guest_id: formData.guest_id,
-          room_id: formData.room_id,
-          check_in_date: formData.check_in_date,
-          check_out_date: formData.check_out_date || null,
-          total_amount: formData.total_amount,
-          status: formData.status,
-          special_requests: formData.special_requests || null,
-          created_at: getLocalISOString()
-        }])
+        .insert([
+          {
+            guest_id: formData.guest_id,
+            room_id: formData.room_id,
+            check_in_date: formData.check_in_date,
+            check_out_date: formData.check_out_date || null,
+            total_amount: formData.total_amount,
+            status: formData.status,
+            special_requests: formData.special_requests || null,
+            created_at: new Date().toISOString() // Usar formato mais simples para evitar erros
+          }
+        ])
+        .select()
 
-      if (error) throw error
+      if (error) {
+        console.error('Erro retornado pelo Supabase:', error)
+        throw error
+      }
 
+      console.log('Reserva criada com sucesso:', data)
       toast.success('Reserva criada com sucesso!')
       router.push('/dashboard/reservations')
     } catch (error) {
-      toast.error('Erro ao criar reserva')
-      console.error('Error:', error)
+      console.error('Erro completo ao criar reserva:', error)
+      toast.error('Erro ao criar reserva. Verifique o console para mais detalhes.')
     } finally {
       setLoading(false)
     }

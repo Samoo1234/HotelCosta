@@ -3,115 +3,44 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Calendar, User, Bed, DollarSign, FileText, Phone, Mail, MapPin, Edit, Trash2, ShoppingCart, CreditCard } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, AlertTriangle, LogIn, LogOut, CheckCircle, Info, Clock, Bed, DollarSign, User, Mail, Phone, FileText } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
-import { formatCurrency, calculateNights, formatDate, createTimezoneAwareDate, getLocalISOString } from '@/lib/utils'
+import ReservationStatus from '@/components/dashboard/ReservationStatus'
+import ReservationActions from '@/components/dashboard/ReservationActions'
+import CheckInModal from '@/components/dashboard/CheckInModal'
+import CheckOutModal from '@/components/dashboard/CheckOutModal'
+import CancelReservationModal from '@/components/dashboard/CancelReservationModal'
+import { getLocalISOString, formatDate } from '@/lib/utils'
+import { 
+  performCheckIn, 
+  performCheckOut, 
+  cancelReservation, 
+  finalizeConsumptions,
+  isValidStatusTransition,
+  getTransitionErrorMessage,
+  validateStatusTransitionRequirements
+} from './actions'
 
-interface Guest {
-  id: string
-  client_type: 'individual' | 'company'
-  first_name: string | null
-  last_name: string | null
-  company_name: string | null
-  trade_name: string | null
-  contact_person: string | null
-  email: string
-  phone: string
-  nationality: string
-  document_type: string
-  document_number: string
-  address: string | null
-  city: string | null
-  state: string | null
-  zip_code: string | null
-}
-
-interface Room {
-  id: string
-  room_number: string
-  room_type: string
-  capacity: number
-  price_per_night: number
-  status: 'available' | 'occupied' | 'maintenance' | 'reserved'
-  amenities: string[] | null
-  description: string | null
-}
-
-interface Reservation {
-  id: string
-  guest_id: string
-  room_id: string
-  check_in_date: string
-  check_out_date: string
-  total_amount: number
-  status: 'confirmed' | 'checked_in' | 'checked_out' | 'cancelled' | 'no_show'
-  special_requests: string | null
-  created_at: string
-  updated_at: string
-  guest: Guest
-  room: Room
-}
-
-interface Product {
-  id: string
-  name: string
-  price: number
-  unit: string
-  category?: {
-    name: string
-  }
-}
-
-interface RoomConsumption {
-  id: string
-  reservation_id: string
-  room_id: string
-  product_id: string
-  quantity: number
-  unit_price: number
-  total_amount: number
-  consumption_date: string
-  payment_responsibility: 'guest' | 'company'
-  status: 'pending' | 'billed' | 'paid' | 'cancelled'
-  notes: string | null
-  registered_by: string | null
-  created_at: string
-  product: Product
-}
-
-const STATUS_COLORS = {
-  confirmed: 'bg-blue-100 text-blue-800',
-  checked_in: 'bg-green-100 text-green-800',
-  checked_out: 'bg-gray-100 text-gray-800',
-  cancelled: 'bg-red-100 text-red-800',
-  no_show: 'bg-yellow-100 text-yellow-800'
-}
-
-const STATUS_LABELS = {
-  confirmed: 'Confirmada',
-  checked_in: 'Check-in',
-  checked_out: 'Check-out',
-  cancelled: 'Cancelada',
-  no_show: 'Não Compareceu'
-}
+import ReservationActionsWrapper from './reservation-actions-wrapper'
 
 export default function ReservationDetailsPage() {
   const router = useRouter()
   const params = useParams()
   const supabase = createClient()
-  const [reservation, setReservation] = useState<Reservation | null>(null)
+  const [reservation, setReservation] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [deleteLoading, setDeleteLoading] = useState(false)
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [hotelSettings, setHotelSettings] = useState<{check_in_time: string, check_out_time: string, timezone?: string} | null>(null)
-  const [consumptions, setConsumptions] = useState<RoomConsumption[]>([])
+  const [showCheckInModal, setShowCheckInModal] = useState(false)
+  const [showCheckOutModal, setShowCheckOutModal] = useState(false)
+  const [showCancelModal, setShowCancelModal] = useState(false)
+  const [consumptions, setConsumptions] = useState<any[]>([])
   const [consumptionsLoading, setConsumptionsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [actionLoading, setActionLoading] = useState(false)
 
   useEffect(() => {
     if (params.id) {
       fetchReservation()
-      loadHotelSettings()
       fetchConsumptions()
     }
   }, [params.id])
@@ -129,38 +58,13 @@ export default function ReservationDetailsPage() {
         .single()
 
       if (error) throw error
-      if (!data) throw new Error('Reserva não encontrada')
-
       setReservation(data)
     } catch (error) {
+      setError('Não foi possível carregar os dados da reserva. Verifique se a reserva existe.')
       toast.error('Erro ao carregar reserva')
       console.error('Error:', error)
-      router.push('/dashboard/reservations')
     } finally {
       setLoading(false)
-    }
-  }
-
-  const loadHotelSettings = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('hotels')
-        .select('check_in_time, check_out_time')
-        .single()
-
-      if (error) throw error
-      
-      setHotelSettings({
-        check_in_time: data.check_in_time || '14:00',
-        check_out_time: data.check_out_time || '12:00'
-      })
-    } catch (error) {
-      console.error('Error loading hotel settings:', error)
-      // Definir valores padrão em caso de erro
-      setHotelSettings({
-        check_in_time: '14:00',
-        check_out_time: '12:00'
-      })
     }
   }
 
@@ -173,10 +77,7 @@ export default function ReservationDetailsPage() {
         .from('room_consumptions')
         .select(`
           *,
-          product:products(
-            *,
-            category:product_categories(*)
-          )
+          product:products(*)
         `)
         .eq('reservation_id', params.id)
         .order('consumption_date', { ascending: false })
@@ -191,228 +92,265 @@ export default function ReservationDetailsPage() {
     }
   }
 
-  const handleDelete = async () => {
-    if (!reservation) return
+  const reloadData = async () => {
+    await Promise.all([
+      fetchReservation(),
+      fetchConsumptions()
+    ])
+  }
 
-    setDeleteLoading(true)
+  // Funções para lidar com ações da reserva
+  const handleCheckIn = async () => {
+    setActionLoading(true)
     try {
-      const { error } = await supabase
-        .from('reservations')
-        .delete()
-        .eq('id', reservation.id)
-
-      if (error) throw error
-
-      toast.success('Reserva excluída com sucesso!')
-      router.push('/dashboard/reservations')
-    } catch (error) {
-      toast.error('Erro ao excluir reserva')
-      console.error('Error:', error)
-    } finally {
-      setDeleteLoading(false)
-      setShowDeleteModal(false)
-    }
-  }
-
-  const updateConsumptionStatus = async (consumptionId: string, newStatus: string) => {
-    try {
-      const { error } = await supabase
-        .from('room_consumptions')
-        .update({ status: newStatus })
-        .eq('id', consumptionId)
-
-      if (error) throw error
+      const result = await performCheckIn(reservation.id)
       
-      // Atualizar o estado local
-      setConsumptions(prev => prev.map(c => 
-        c.id === consumptionId ? { ...c, status: newStatus as any } : c
-      ))
+      // Mostrar feedback visual com a mensagem retornada pela função
+      toast.success(result.message || 'Check-in realizado com sucesso!')
       
-      toast.success('Status atualizado com sucesso!')
-    } catch (error) {
-      console.error('Error updating consumption status:', error)
-      toast.error('Erro ao atualizar status')
-    }
-  }
-
-  const finalizeBilling = async () => {
-    const pendingConsumptions = consumptions.filter(c => c.status === 'pending')
-    
-    if (pendingConsumptions.length === 0) {
-      toast.error('Não há consumos pendentes para faturar')
-      return
-    }
-
-    try {
-      const { error } = await supabase
-        .from('room_consumptions')
-        .update({ status: 'billed' })
-        .eq('reservation_id', params.id)
-        .eq('status', 'pending')
-
-      if (error) throw error
-      
-      // Atualizar o estado local
-      setConsumptions(prev => prev.map(c => 
-        c.status === 'pending' ? { ...c, status: 'billed' } : c
-      ))
-      
-      toast.success(`${pendingConsumptions.length} consumo(s) faturado(s) com sucesso!`)
-    } catch (error) {
-      console.error('Error billing consumptions:', error)
-      toast.error('Erro ao faturar consumos')
-    }
-  }
-
-  const getGuestName = (guest: Guest | null | undefined) => {
-    if (!guest) return 'Hóspede indefinido'
-    return guest.client_type === 'individual'
-      ? `${guest.first_name || ''} ${guest.last_name || ''}`.trim() || 'Nome não informado'
-      : guest.trade_name || guest.company_name || 'Empresa'
-  }
-
-  const getNights = (checkIn: string, checkOut: string) => {
-    if (!hotelSettings) {
-      // Fallback para o cálculo antigo se as configurações não estiverem carregadas
-      const checkInDate = new Date(checkIn)
-      const checkOutDate = new Date(checkOut)
-      return Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24))
-    }
-    
-    const checkInDateTime = new Date(`${checkIn}T${hotelSettings.check_in_time}:00`)
-    const checkOutDateTime = new Date(`${checkOut}T${hotelSettings.check_out_time}:00`)
-    const diffMs = checkOutDateTime.getTime() - checkInDateTime.getTime()
-    return Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)))
-  }
-
-  const getDaysUntilCheckIn = (checkInDate: string) => {
-    const today = new Date()
-    const checkIn = new Date(checkInDate)
-    const diffTime = checkIn.getTime() - today.getTime()
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    return diffDays
-  }
-
-  const getConsumptionStatusBadge = (status: string) => {
-    const statusConfig = {
-      pending: { label: 'Pendente', color: 'bg-yellow-100 text-yellow-800' },
-      billed: { label: 'Faturado', color: 'bg-blue-100 text-blue-800' },
-      paid: { label: 'Pago', color: 'bg-green-100 text-green-800' },
-      cancelled: { label: 'Cancelado', color: 'bg-red-100 text-red-800' }
-    }
-    
-    const config = statusConfig[status as keyof typeof statusConfig] || { label: status, color: 'bg-gray-100 text-gray-800' }
-    
-    return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.color}`}>
-        {config.label}
-      </span>
-    )
-  }
-
-  const getPaymentResponsibilityBadge = (responsibility: string, clientType: string) => {
-    const isCompany = clientType === 'company'
-    
-    if (responsibility === 'company') {
-      return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-          Empresa
-        </span>
-      )
-    } else {
-      return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-          Hóspede
-        </span>
-      )
-    }
-  }
-
-  // Função para processar check-out consolidado
-  const processCheckout = async () => {
-    if (!reservation) return
-    
-    try {
-      const totalAmount = reservation.total_amount + consumptions.reduce((sum, c) => sum + c.total_amount, 0)
-      
-      // Criar pagamento consolidado
-      const { data: payment, error: paymentError } = await supabase
-        .from('payments')
-        .insert({
-          reservation_id: reservation.id,
-          amount: totalAmount,
-          payment_method: 'checkout', // ou outro método padrão
-          payment_date: getLocalISOString(hotelSettings?.timezone || 'America/Sao_Paulo'),
-          status: 'completed',
-          notes: `Check-out consolidado - Hospedagem: ${formatCurrency(reservation.total_amount)} + Consumos: ${formatCurrency(consumptions.reduce((sum, c) => sum + c.total_amount, 0))}`
+      // Se houver alertas, mostrar como notificações informativas
+      if (result.warnings && result.warnings.length > 0) {
+        result.warnings.forEach(warning => {
+          toast.success(warning, { 
+            icon: '⚠️',
+            duration: 6000
+          })
         })
-        .select()
-        .single()
-      
-      if (paymentError) throw paymentError
-      
-      // Marcar todos os consumos como pagos
-      if (consumptions.length > 0) {
-        const { error: consumptionsError } = await supabase
-          .from('room_consumptions')
-          .update({ status: 'paid' })
-          .eq('reservation_id', reservation.id)
-        
-        if (consumptionsError) throw consumptionsError
       }
       
-      // Atualizar status da reserva para checked_out
-      const { error: reservationError } = await supabase
-        .from('reservations')
-        .update({ 
-          status: 'checked_out',
-          updated_at: getLocalISOString(hotelSettings?.timezone || 'America/Sao_Paulo')
+      // Mostrar notificação sobre o status do quarto
+      if (result.roomStatus === 'occupied') {
+        toast.success(`Quarto ${reservation.room.room_number} marcado como ocupado`, {
+          duration: 4000
         })
-        .eq('id', reservation.id)
+      }
       
-      if (reservationError) throw reservationError
+      // Registrar a transição de status no console para depuração
+      console.log(`Status da reserva alterado: ${result.previousStatus} -> ${result.newStatus}`)
       
-      toast.success('Check-out realizado com sucesso!')
+      await reloadData()
+    } catch (error: any) {
+      console.error('Error performing check-in:', error)
       
-      // Recarregar dados
-      await Promise.all([
-        fetchReservation(),
-        fetchConsumptions()
-      ])
-      
-    } catch (error) {
-      toast.error('Erro ao processar check-out')
-      console.error('Error processing checkout:', error)
+      // Mostrar mensagem de erro específica
+      toast.error('Erro ao realizar check-in: ' + (error.message || 'Erro desconhecido'), {
+        duration: 5000
+      })
+    } finally {
+      setActionLoading(false)
+      setShowCheckInModal(false)
     }
   }
   
-  // Função para obter status do pagamento consolidado
-  const getPaymentStatusBadge = () => {
-    if (!reservation) return null
-    
-    const hasUnpaidConsumptions = consumptions.some(c => c.status === 'pending')
-    const isCheckedOut = reservation.status === 'checked_out'
-    
-    if (isCheckedOut) {
-      return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-          Conta Finalizada
-        </span>
-      )
-    } else if (hasUnpaidConsumptions) {
-      return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-          Consumos Pendentes
-        </span>
-      )
-    } else {
-      return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-          Pronto para Check-out
-        </span>
-      )
+  const handleCheckOut = async (paymentMethod = 'credit_card') => {
+    setActionLoading(true)
+    try {
+      // Verificar se há consumos pendentes
+      const hasUnpaidConsumptions = consumptions.some(c => c.status === 'pending')
+      
+      // Se houver consumos pendentes, finalizá-los primeiro
+      if (hasUnpaidConsumptions) {
+        await handleFinalizeConsumptions()
+      }
+      
+      // Realizar o check-out com o método de pagamento selecionado
+      const result = await performCheckOut(reservation.id, consumptions, paymentMethod)
+      
+      // Mostrar feedback visual com a mensagem retornada pela função
+      toast.success(result.message || 'Check-out realizado com sucesso!')
+      
+      // Mostrar informações do pagamento
+      if (result && result.payment_id) {
+        toast.success(`Pagamento registrado: R$ ${result.total_amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, {
+          duration: 5000,
+          icon: '💰'
+        })
+        
+        // Mostrar detalhes adicionais do pagamento
+        if (result.stay_duration) {
+          toast.success(`Estadia de ${result.stay_duration} ${result.stay_duration > 1 ? 'diárias' : 'diária'} finalizada`, {
+            duration: 4000
+          })
+        }
+        
+        // Mostrar detalhes dos consumos se houver
+        if (result.consumptions_count > 0) {
+          toast.success(`${result.consumptions_count} consumo(s) registrado(s): R$ ${result.consumption_amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, {
+            duration: 4000
+          })
+        }
+      }
+      
+      // Se houver alertas, mostrar como notificações informativas
+      if (result.warnings && result.warnings.length > 0) {
+        result.warnings.forEach(warning => {
+          toast.success(warning, { 
+            icon: '⚠️',
+            duration: 6000
+          })
+        })
+      }
+      
+      // Mostrar notificação sobre o status do quarto
+      if (result.roomStatus === 'available') {
+        toast.success(`Quarto ${reservation.room.room_number} liberado para novas reservas`, {
+          duration: 5000,
+          icon: '🔑'
+        })
+      }
+      
+      // Registrar a transição de status no console para depuração
+      console.log(`Status da reserva alterado: ${result.previousStatus} -> ${result.newStatus}`)
+      
+      await reloadData()
+    } catch (error: any) {
+      console.error('Error performing check-out:', error)
+      
+      // Mostrar mensagem de erro específica
+      toast.error('Erro ao realizar check-out: ' + (error.message || 'Erro desconhecido'), {
+        duration: 5000
+      })
+    } finally {
+      setActionLoading(false)
+      setShowCheckOutModal(false)
     }
   }
+  
+  const handleCancel = async (reason: string) => {
+    setActionLoading(true)
+    try {
+      const result = await cancelReservation(reservation.id, reason)
+      
+      // Mostrar feedback visual com a mensagem retornada pela função
+      toast.success(result.message || 'Reserva cancelada com sucesso!')
+      
+      // Se houver alertas, mostrar como notificações informativas
+      if (result.warnings && result.warnings.length > 0) {
+        result.warnings.forEach(warning => {
+          toast.success(warning, { 
+            icon: '⚠️',
+            duration: 6000
+          })
+        })
+      }
+      
+      // Mostrar notificação sobre o status do quarto
+      if (result.roomStatus === 'available') {
+        toast.success(`Quarto ${reservation.room.room_number} liberado para novas reservas`, {
+          duration: 4000
+        })
+      }
+      
+      // Registrar a transição de status no console para depuração
+      console.log(`Status da reserva alterado: ${result.previousStatus} -> ${result.newStatus}`)
+      
+      await reloadData()
+    } catch (error: any) {
+      console.error('Error cancelling reservation:', error)
+      
+      // Mostrar mensagem de erro específica
+      toast.error('Erro ao cancelar reserva: ' + (error.message || 'Erro desconhecido'), {
+        duration: 5000
+      })
+    } finally {
+      setActionLoading(false)
+      setShowCancelModal(false)
+    }
+  }
+  
+  const handleFinalizeConsumptions = async () => {
+    setActionLoading(true)
+    try {
+      const result = await finalizeConsumptions(reservation.id)
+      
+      // Mostrar feedback visual com a mensagem retornada pela função
+      toast.success(result.message || 'Consumos finalizados com sucesso!')
+      
+      // Se não houver consumos para finalizar, mostrar uma mensagem informativa
+      if (result.updatedCount === 0) {
+        toast.success('Não há consumos pendentes para finalizar.', {
+          icon: 'ℹ️',
+          duration: 4000
+        })
+      }
+      
+      await reloadData()
+    } catch (error: any) {
+      console.error('Error finalizing consumptions:', error)
+      
+      // Mostrar mensagem de erro específica
+      toast.error('Erro ao finalizar consumos: ' + (error.message || 'Erro desconhecido'), {
+        duration: 5000
+      })
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  // Função para obter a próxima ação recomendada
+  const getNextAction = () => {
+    if (!reservation) return null;
+    
+    const hasUnpaidConsumptions = consumptions.some(c => c.status === 'pending');
+    
+    // Calcular dias restantes até o check-out (apenas se houver data de check-out)
+    let daysUntilCheckout = null;
+    let isCheckoutSoon = false;
+    
+    if (reservation.check_out_date) {
+      daysUntilCheckout = Math.ceil((new Date(reservation.check_out_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+      isCheckoutSoon = daysUntilCheckout <= 1 && daysUntilCheckout >= 0 && reservation.status === 'checked_in';
+    }
+    
+    switch (reservation.status) {
+      case 'confirmed':
+        return {
+          title: 'Realizar Check-in',
+          description: 'O hóspede está pronto para entrar no quarto.',
+          action: () => setShowCheckInModal(true),
+          icon: LogIn,
+          color: 'blue'
+        };
+      case 'checked_in':
+        return {
+          title: 'Realizar Check-out',
+          description: hasUnpaidConsumptions 
+            ? 'Existem consumos pendentes que precisam ser finalizados antes do check-out.' 
+            : !reservation.check_out_date
+              ? 'Check-out em aberto - sem data definida.'
+              : isCheckoutSoon
+                ? `O check-out está programado para ${daysUntilCheckout === 0 ? 'hoje' : 'amanhã'}.`
+                : 'O hóspede está pronto para deixar o quarto.',
+          action: () => setShowCheckOutModal(true),
+          icon: LogOut,
+          color: hasUnpaidConsumptions ? 'yellow' : 'blue',
+          warning: hasUnpaidConsumptions
+        };
+      case 'checked_out':
+        return {
+          title: 'Reserva Finalizada',
+          description: 'Esta reserva já foi finalizada com sucesso.',
+          icon: CheckCircle,
+          color: 'green'
+        };
+      case 'cancelled':
+        return {
+          title: 'Reserva Cancelada',
+          description: 'Esta reserva foi cancelada.',
+          icon: Info,
+          color: 'gray'
+        };
+      default:
+        return null;
+    }
+  };
+
+  const getGuestName = (guest: any) => {
+    if (!guest) return 'Hóspede indefinido';
+    return guest.client_type === 'individual'
+      ? `${guest.first_name || ''} ${guest.last_name || ''}`.trim() || 'Nome não informado'
+      : guest.trade_name || guest.company_name || 'Empresa';
+  };
 
   if (loading) {
     return (
@@ -422,10 +360,16 @@ export default function ReservationDetailsPage() {
     )
   }
 
-  if (!reservation) {
+  if (error || !reservation) {
     return (
       <div className="text-center py-12">
-        <h3 className="text-lg font-medium text-gray-900 mb-2">Reserva não encontrada</h3>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-6 inline-flex items-start">
+          <AlertTriangle className="h-6 w-6 text-red-600 mr-3 mt-0.5" />
+          <div className="text-left">
+            <h3 className="text-lg font-medium text-red-800 mb-2">Erro ao carregar reserva</h3>
+            <p className="text-red-700">{error || 'Reserva não encontrada'}</p>
+          </div>
+        </div>
         <Link href="/dashboard/reservations" className="btn-primary">
           Voltar para Reservas
         </Link>
@@ -433,8 +377,17 @@ export default function ReservationDetailsPage() {
     )
   }
 
-  const nights = getNights(reservation.check_in_date, reservation.check_out_date)
-  const daysUntilCheckIn = getDaysUntilCheckIn(reservation.check_in_date)
+  const hasUnpaidConsumptions = consumptions.some(c => c.status === 'pending');
+  const nextAction = getNextAction();
+  
+  // Calcular dias restantes até o check-out (apenas se houver data de check-out)
+  let daysUntilCheckout = null;
+  let isCheckoutSoon = false;
+  
+  if (reservation.check_out_date) {
+    daysUntilCheckout = Math.ceil((new Date(reservation.check_out_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+    isCheckoutSoon = daysUntilCheckout <= 1 && daysUntilCheckout >= 0 && reservation.status === 'checked_in';
+  }
 
   return (
     <div className="space-y-6">
@@ -448,9 +401,12 @@ export default function ReservationDetailsPage() {
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              Reserva #{reservation.id.slice(-8)}
-            </h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold text-gray-900">
+                Reserva #{reservation.id.slice(-8)}
+              </h1>
+              <ReservationStatus status={reservation.status} size="md" />
+            </div>
             <p className="text-gray-600 mt-2">
               {getGuestName(reservation.guest)} - Quarto {reservation.room.room_number}
             </p>
@@ -465,13 +421,16 @@ export default function ReservationDetailsPage() {
             <Edit className="h-4 w-4 mr-2" />
             Editar
           </Link>
-          <button
-            onClick={() => setShowDeleteModal(true)}
-            className="btn-secondary text-red-600 hover:text-red-700 hover:bg-red-50"
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Excluir
-          </button>
+          {(reservation.status === 'confirmed' || reservation.status === 'checked_in') && (
+            <button
+              onClick={() => setShowCancelModal(true)}
+              className="btn-secondary text-red-600 hover:text-red-700 hover:bg-red-50"
+              disabled={actionLoading}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Cancelar
+            </button>
+          )}
         </div>
       </div>
 
@@ -480,15 +439,27 @@ export default function ReservationDetailsPage() {
         <div className="card">
           <div className="flex items-center">
             <div className="p-2 bg-blue-100 rounded-lg">
-              <Calendar className="h-5 w-5 text-blue-600" />
+              <LogIn className="h-5 w-5 text-blue-600" />
             </div>
             <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Status</p>
-              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                STATUS_COLORS[reservation.status]
-              }`}>
-                {STATUS_LABELS[reservation.status]}
-              </span>
+              <p className="text-sm font-medium text-gray-600">Check-in</p>
+              <p className="text-sm font-bold text-gray-900">
+                {formatDate(reservation.check_in_date)}
+              </p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="card">
+          <div className="flex items-center">
+            <div className="p-2 bg-purple-100 rounded-lg">
+              <LogOut className="h-5 w-5 text-purple-600" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Check-out</p>
+              <p className="text-sm font-bold text-gray-900">
+                {formatDate(reservation.check_out_date)}
+              </p>
             </div>
           </div>
         </div>
@@ -500,7 +471,12 @@ export default function ReservationDetailsPage() {
             </div>
             <div className="ml-3">
               <p className="text-sm font-medium text-gray-600">Noites</p>
-              <p className="text-lg font-bold text-gray-900">{nights}</p>
+              <p className="text-lg font-bold text-gray-900">
+                {reservation.check_out_date 
+                  ? Math.ceil((new Date(reservation.check_out_date).getTime() - new Date(reservation.check_in_date).getTime()) / (1000 * 60 * 60 * 24))
+                  : 'Em aberto'
+                }
+              </p>
             </div>
           </div>
         </div>
@@ -518,557 +494,241 @@ export default function ReservationDetailsPage() {
             </div>
           </div>
         </div>
-        
-        <div className="card">
-          <div className="flex items-center">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <Calendar className="h-5 w-5 text-purple-600" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Check-in</p>
-              <p className="text-sm font-bold text-gray-900">
-                {daysUntilCheckIn === 0 ? 'Hoje' : 
-                 daysUntilCheckIn === 1 ? 'Amanhã' : 
-                 daysUntilCheckIn > 0 ? `Em ${daysUntilCheckIn} dias` : 
-                 `${Math.abs(daysUntilCheckIn)} dias atrás`}
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Guest Information */}
-        <div className="card">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <User className="h-5 w-5 mr-2" />
-            Informações do Hóspede
-          </h2>
-          
-          <div className="space-y-4">
-            <div>
-              <p className="text-sm text-gray-600">Nome</p>
-              <p className="font-medium text-gray-900">
-                {getGuestName(reservation.guest)}
-                <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
-                  reservation.guest.client_type === 'individual' 
-                    ? 'bg-blue-100 text-blue-800' 
-                    : 'bg-purple-100 text-purple-800'
-                }`}>
-                  {reservation.guest.client_type === 'individual' ? 'PF' : 'PJ'}
-                </span>
-              </p>
-            </div>
-            
-            {reservation.guest.client_type === 'company' && reservation.guest.contact_person && (
-              <div>
-                <p className="text-sm text-gray-600">Pessoa de Contato</p>
-                <p className="font-medium text-gray-900">{reservation.guest.contact_person}</p>
-              </div>
-            )}
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm text-gray-600 flex items-center">
-                  <Mail className="h-4 w-4 mr-1" />
-                  Email
-                </p>
-                <p className="font-medium text-gray-900">{reservation.guest.email}</p>
-              </div>
-              
-              <div>
-                <p className="text-sm text-gray-600 flex items-center">
-                  <Phone className="h-4 w-4 mr-1" />
-                  Telefone
-                </p>
-                <p className="font-medium text-gray-900">{reservation.guest.phone}</p>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm text-gray-600">Documento</p>
-                <p className="font-medium text-gray-900">
-                  {reservation.guest.document_type}: {reservation.guest.document_number}
-                </p>
-              </div>
-              
-              <div>
-                <p className="text-sm text-gray-600">Nacionalidade</p>
-                <p className="font-medium text-gray-900">{reservation.guest.nationality}</p>
-              </div>
-            </div>
-            
-            {reservation.guest.address && (
-              <div>
-                <p className="text-sm text-gray-600 flex items-center">
-                  <MapPin className="h-4 w-4 mr-1" />
-                  Endereço
-                </p>
-                <p className="font-medium text-gray-900">
-                  {reservation.guest.address}
-                  {reservation.guest.city && `, ${reservation.guest.city}`}
-                  {reservation.guest.state && `, ${reservation.guest.state}`}
-                  {reservation.guest.zip_code && ` - ${reservation.guest.zip_code}`}
-                </p>
-              </div>
-            )}
-            
-            <div className="pt-4 border-t">
-              <Link
-                href={`/dashboard/guests/${reservation.guest.id}/details`}
-                className="text-primary-600 hover:text-primary-700 text-sm font-medium"
-              >
-                Ver perfil completo do hóspede →
-              </Link>
-            </div>
-          </div>
-        </div>
-
-        {/* Room Information */}
-        <div className="card">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <Bed className="h-5 w-5 mr-2" />
-            Informações do Quarto
-          </h2>
-          
-          <div className="space-y-4">
-            <div>
-              <p className="text-sm text-gray-600">Número do Quarto</p>
-              <p className="text-2xl font-bold text-gray-900">{reservation.room.room_number}</p>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm text-gray-600">Tipo</p>
-                <p className="font-medium text-gray-900">{reservation.room.room_type}</p>
-              </div>
-              
-              <div>
-                <p className="text-sm text-gray-600">Capacidade</p>
-                <p className="font-medium text-gray-900">{reservation.room.capacity} pessoa{reservation.room.capacity !== 1 ? 's' : ''}</p>
-              </div>
-            </div>
-            
-            <div>
-              <p className="text-sm text-gray-600">Preço por Noite</p>
-              <p className="text-lg font-bold text-gray-900">
-                R$ {reservation.room.price_per_night.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </p>
-            </div>
-            
-            {reservation.room.description && (
-              <div>
-                <p className="text-sm text-gray-600">Descrição</p>
-                <p className="text-gray-900">{reservation.room.description}</p>
-              </div>
-            )}
-            
-            {reservation.room.amenities && reservation.room.amenities.length > 0 && (
-              <div>
-                <p className="text-sm text-gray-600 mb-2">Comodidades</p>
-                <div className="flex flex-wrap gap-2">
-                  {reservation.room.amenities.map((amenity, index) => (
-                    <span key={index} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
-                      {amenity}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            <div className="pt-4 border-t">
-              <Link
-                href={`/dashboard/rooms/${reservation.room.id}/details`}
-                className="text-primary-600 hover:text-primary-700 text-sm font-medium"
-              >
-                Ver detalhes completos do quarto →
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Reservation Details */}
-      <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Calendar className="h-5 w-5 mr-2" />
-          Detalhes da Reserva
-        </h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      
+      {/* Next Action and Alerts */}
+      {isCheckoutSoon && reservation.check_out_date && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start">
+          <Clock className="h-5 w-5 text-yellow-600 mr-2 mt-0.5" />
           <div>
-            <p className="text-sm text-gray-600">Data de Check-in</p>
-            <p className="text-lg font-medium text-gray-900">
-              {new Date(reservation.check_in_date).toLocaleDateString('pt-BR', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              })}
+            <p className="text-yellow-800 font-medium">Check-out em breve</p>
+            <p className="text-yellow-700 text-sm mt-1">
+              {daysUntilCheckout === 0 
+                ? 'O check-out está programado para hoje.' 
+                : `O check-out está programado para amanhã (${formatDate(reservation.check_out_date)}).`}
+              {hasUnpaidConsumptions && ' Existem consumos pendentes que precisam ser finalizados.'}
             </p>
-          </div>
-          
-          <div>
-            <p className="text-sm text-gray-600">Data de Check-out</p>
-            <p className="text-lg font-medium text-gray-900">
-              {new Date(reservation.check_out_date).toLocaleDateString('pt-BR', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              })}
-            </p>
-          </div>
-          
-          <div>
-            <p className="text-sm text-gray-600">Duração</p>
-            <p className="text-lg font-medium text-gray-900">
-              {nights} noite{nights !== 1 ? 's' : ''}
-            </p>
-          </div>
-          
-          <div>
-            <p className="text-sm text-gray-600">Valor por Noite</p>
-            <p className="text-lg font-medium text-gray-900">
-              R$ {(reservation.total_amount / nights).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-            </p>
-          </div>
-        </div>
-        
-        {reservation.special_requests && (
-          <div className="mt-6 pt-6 border-t">
-            <p className="text-sm text-gray-600 mb-2 flex items-center">
-              <FileText className="h-4 w-4 mr-1" />
-              Solicitações Especiais
-            </p>
-            <p className="text-gray-900 bg-gray-50 p-3 rounded-lg">
-              {reservation.special_requests}
-            </p>
-          </div>
-        )}
-        
-        <div className="mt-6 pt-6 border-t">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
-            <div>
-              <p>Reserva criada em:</p>
-              <p className="font-medium text-gray-900">
-                {new Date(reservation.created_at).toLocaleString('pt-BR')}
-              </p>
-            </div>
-            <div>
-              <p>Última atualização:</p>
-              <p className="font-medium text-gray-900">
-                {new Date(reservation.updated_at).toLocaleString('pt-BR')}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Consumptions Section */}
-      <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-            <ShoppingCart className="h-5 w-5 mr-2" />
-            Consumos da Reserva
-          </h2>
-          <div className="flex gap-2">
-            <Link
-              href={`/dashboard/consumptions/new?reservation_id=${reservation.id}`}
-              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-            >
-              <ShoppingCart className="h-4 w-4 mr-1" />
-              Novo Consumo
-            </Link>
-            {consumptions.some(c => c.status === 'pending') && (
-              <button
-                onClick={finalizeBilling}
-                className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-              >
-                <CreditCard className="h-4 w-4 mr-1" />
-                Finalizar Faturamento
-              </button>
-            )}
-          </div>
-        </div>
-
-        {consumptionsLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
-          </div>
-        ) : consumptions.length === 0 ? (
-          <div className="text-center py-8">
-            <ShoppingCart className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhum consumo registrado</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Esta reserva ainda não possui consumos registrados.
-            </p>
-            <div className="mt-6">
-              <Link
-                href={`/dashboard/consumptions/new?reservation_id=${reservation.id}`}
-                className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700"
-              >
-                <ShoppingCart className="-ml-1 mr-2 h-4 w-4" />
-                Registrar Primeiro Consumo
-              </Link>
-            </div>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Produto
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Quantidade
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Valor Total
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Responsável
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Data
-                  </th>
-                  <th className="relative px-6 py-3">
-                    <span className="sr-only">Ações</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {consumptions.map((consumption) => (
-                  <tr key={consumption.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        {consumption.product.name}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {consumption.product.category?.name}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {consumption.quantity} {consumption.product.unit}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {formatCurrency(consumption.unit_price)} cada
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        {formatCurrency(consumption.total_amount)}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {getPaymentResponsibilityBadge(
-                        consumption.payment_responsibility,
-                        reservation.guest.client_type
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {getConsumptionStatusBadge(consumption.status)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatDate(consumption.consumption_date || consumption.created_at)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex items-center justify-end space-x-2">
-                        {consumption.status === 'pending' && (
-                          <>
-                            <button
-                              onClick={() => updateConsumptionStatus(consumption.id, 'billed')}
-                              className="text-blue-600 hover:text-blue-900 text-xs px-2 py-1 rounded"
-                            >
-                              Faturar
-                            </button>
-                            <button
-                              onClick={() => updateConsumptionStatus(consumption.id, 'cancelled')}
-                              className="text-red-600 hover:text-red-900 text-xs px-2 py-1 rounded"
-                            >
-                              Cancelar
-                            </button>
-                          </>
-                        )}
-                        {consumption.status === 'billed' && (
-                          <button
-                            onClick={() => updateConsumptionStatus(consumption.id, 'paid')}
-                            className="text-green-600 hover:text-green-900 text-xs px-2 py-1 rounded"
-                          >
-                            Marcar Pago
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            
-            {/* Resumo dos Consumos */}
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                <div>
-                  <span className="text-gray-600">Total de Consumos:</span>
-                  <span className="font-medium text-gray-900 ml-2">
-                    {consumptions.length}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-600">Valor Total:</span>
-                  <span className="font-medium text-gray-900 ml-2">
-                    {formatCurrency(
-                      consumptions.reduce((sum, c) => sum + c.total_amount, 0)
-                    )}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-600">Pendentes:</span>
-                  <span className="font-medium text-yellow-600 ml-2">
-                    {consumptions.filter(c => c.status === 'pending').length}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Consolidated Billing Section */}
-      <div className="card">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-            <CreditCard className="h-5 w-5 mr-2" />
-            Conta Consolidada da Hospedagem
-          </h2>
-          {reservation.status === 'checked_in' && (
-            <div className="flex gap-2">
-              <button
-                onClick={processCheckout}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-              >
-                <CreditCard className="h-4 w-4 mr-2" />
-                Finalizar Check-out
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="bg-gray-50 rounded-lg p-6">
-          <div className="space-y-4">
-            {/* Hospedagem */}
-            <div className="flex justify-between items-center">
-              <div>
-                <span className="text-gray-900 font-medium">Hospedagem</span>
-                <div className="text-sm text-gray-500">
-                  {getNights(reservation.check_in_date, reservation.check_out_date)} noite(s) × {formatCurrency(reservation.room.price_per_night)}
-                </div>
-              </div>
-              <span className="text-gray-900 font-medium">
-                {formatCurrency(reservation.total_amount)}
-              </span>
-            </div>
-
-            <div className="border-t border-gray-200 pt-4">
-              <div className="text-sm font-medium text-gray-900 mb-2">Consumos:</div>
-              {consumptions.length === 0 ? (
-                <div className="text-sm text-gray-500 italic">Nenhum consumo registrado</div>
-              ) : (
-                <div className="space-y-2">
-                  {consumptions.map((consumption) => (
-                    <div key={consumption.id} className="flex justify-between items-center text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-700">
-                          {consumption.product.name} × {consumption.quantity}
-                        </span>
-                        {getConsumptionStatusBadge(consumption.status)}
-                      </div>
-                      <span className="text-gray-900">
-                        {formatCurrency(consumption.total_amount)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Subtotais */}
-            <div className="border-t border-gray-200 pt-4 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Subtotal Hospedagem:</span>
-                <span className="text-gray-900">{formatCurrency(reservation.total_amount)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Subtotal Consumos:</span>
-                <span className="text-gray-900">
-                  {formatCurrency(consumptions.reduce((sum, c) => sum + c.total_amount, 0))}
-                </span>
-              </div>
-              <div className="flex justify-between text-lg font-bold border-t border-gray-300 pt-2">
-                <span className="text-gray-900">TOTAL GERAL:</span>
-                <span className="text-gray-900">
-                  {formatCurrency(
-                    reservation.total_amount + consumptions.reduce((sum, c) => sum + c.total_amount, 0)
-                  )}
-                </span>
-              </div>
-            </div>
-
-            {/* Status do Pagamento */}
-            <div className="border-t border-gray-200 pt-4">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-600">Status do Pagamento:</span>
-                <div className="flex items-center gap-2">
-                  {getPaymentStatusBadge()}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Delete Modal */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Confirmar Exclusão
-            </h3>
-            <p className="text-gray-600 mb-6">
-              Tem certeza que deseja excluir esta reserva? Esta ação não pode ser desfeita.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setShowDeleteModal(false)}
-                className="btn-secondary"
-                disabled={deleteLoading}
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleDelete}
-                disabled={deleteLoading}
-                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
-              >
-                {deleteLoading ? (
-                  <div className="flex items-center">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Excluindo...
-                  </div>
-                ) : (
-                  'Excluir'
-                )}
-              </button>
-            </div>
           </div>
         </div>
       )}
+      
+      {/* Alert for open checkout */}
+      {!reservation.check_out_date && reservation.status === 'checked_in' && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start">
+          <Info className="h-5 w-5 text-blue-600 mr-2 mt-0.5" />
+          <div>
+            <p className="text-blue-800 font-medium">Check-out em aberto</p>
+            <p className="text-blue-700 text-sm mt-1">
+              Esta reserva não possui data de check-out definida. O hóspede pode permanecer até realizar o check-out.
+              {hasUnpaidConsumptions && ' Existem consumos pendentes que precisam ser finalizados.'}
+            </p>
+          </div>
+        </div>
+      )}
+      
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Left Column (2/3 width) */}
+        <div className="md:col-span-2">
+          {/* This will be populated by the client component */}
+        </div>
+        
+        {/* Right Column (1/3 width) */}
+        <div className="space-y-6">
+          {/* Actions Card */}
+          <div className="card">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              Ações Disponíveis
+            </h2>
+            
+            <ReservationActions
+              reservation={reservation}
+              onCheckIn={() => setShowCheckInModal(true)}
+              onCheckOut={() => setShowCheckOutModal(true)}
+              onCancel={() => setShowCancelModal(true)}
+              onAddConsumption={() => router.push(`/dashboard/consumptions/new?reservation_id=${reservation.id}`)}
+              onFinalizeConsumptions={handleFinalizeConsumptions}
+              hasUnpaidConsumptions={hasUnpaidConsumptions}
+              consumptions={consumptions}
+              isValidStatusTransition={(current: string, target: string) => isValidStatusTransition(current as any, target as any)}
+              getTransitionErrorMessage={(current: string, target: string) => getTransitionErrorMessage(current as any, target as any)}
+              validateStatusTransitionRequirements={(current: string, target: string, data: any, cons?: any[]) => validateStatusTransitionRequirements(current as any, target as any, data, cons)}
+            />
+          </div>
+          
+          {/* Next Action Card */}
+          {nextAction && (
+            <div className="card">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                Próxima Ação Recomendada
+              </h2>
+              
+              <div className={nextAction.warning 
+                ? "p-4 rounded-lg bg-yellow-50" 
+                : nextAction.color === "blue" 
+                  ? "p-4 rounded-lg bg-blue-50"
+                  : nextAction.color === "green"
+                    ? "p-4 rounded-lg bg-green-50"
+                    : "p-4 rounded-lg bg-gray-50"
+              }>
+                <div className="flex items-start">
+                  {nextAction.icon && (
+                    <nextAction.icon className={nextAction.warning 
+                      ? "h-5 w-5 mr-3 mt-0.5 text-yellow-600" 
+                      : nextAction.color === "blue" 
+                        ? "h-5 w-5 mr-3 mt-0.5 text-blue-600"
+                        : nextAction.color === "green"
+                          ? "h-5 w-5 mr-3 mt-0.5 text-green-600"
+                          : "h-5 w-5 mr-3 mt-0.5 text-gray-600"
+                    } />
+                  )}
+                  <div>
+                    <h3 className={nextAction.warning 
+                      ? "font-medium text-yellow-800" 
+                      : nextAction.color === "blue" 
+                        ? "font-medium text-blue-800"
+                        : nextAction.color === "green"
+                          ? "font-medium text-green-800"
+                          : "font-medium text-gray-800"
+                    }>
+                      {nextAction.title}
+                    </h3>
+                    <p className={nextAction.warning 
+                      ? "text-sm mt-1 text-yellow-700" 
+                      : nextAction.color === "blue" 
+                        ? "text-sm mt-1 text-blue-700"
+                        : nextAction.color === "green"
+                          ? "text-sm mt-1 text-green-700"
+                          : "text-sm mt-1 text-gray-700"
+                    }>
+                      {nextAction.description}
+                    </p>
+                    
+                    {nextAction.action && (
+                      <button
+                        onClick={nextAction.action}
+                        disabled={actionLoading}
+                        className={nextAction.warning 
+                          ? "mt-3 px-4 py-2 rounded-md text-sm font-medium bg-yellow-600 hover:bg-yellow-700 text-white" 
+                          : "mt-3 px-4 py-2 rounded-md text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+                        }
+                      >
+                        {actionLoading ? (
+                          <div className="flex items-center">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                            Processando...
+                          </div>
+                        ) : (
+                          nextAction.title
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {/* Main Content - Guest and Room Details */}
+      <div className="mt-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="card">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              Informações do Hóspede
+            </h2>
+            <div className="space-y-3">
+              <div className="flex items-start">
+                <div className="p-2 bg-blue-100 rounded-lg mr-3">
+                  <User className="h-4 w-4 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Nome</p>
+                  <p className="font-medium">{getGuestName(reservation.guest)}</p>
+                </div>
+              </div>
+              
+              {reservation.guest.email && (
+                <div className="flex items-start">
+                  <div className="p-2 bg-green-100 rounded-lg mr-3">
+                    <Mail className="h-4 w-4 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Email</p>
+                    <p className="font-medium">{reservation.guest.email}</p>
+                  </div>
+                </div>
+              )}
+              
+              {reservation.guest.phone && (
+                <div className="flex items-start">
+                  <div className="p-2 bg-purple-100 rounded-lg mr-3">
+                    <Phone className="h-4 w-4 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Telefone</p>
+                    <p className="font-medium">{reservation.guest.phone}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="card">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              Informações do Quarto
+            </h2>
+            <div className="space-y-3">
+              <div className="flex items-start">
+                <div className="p-2 bg-yellow-100 rounded-lg mr-3">
+                  <Bed className="h-4 w-4 text-yellow-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Quarto</p>
+                  <p className="font-medium">{reservation.room.room_number} - {reservation.room.room_type}</p>
+                </div>
+              </div>
+              
+              {reservation.special_requests && (
+                <div className="flex items-start">
+                  <div className="p-2 bg-orange-100 rounded-lg mr-3">
+                    <FileText className="h-4 w-4 text-orange-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Solicitações Especiais</p>
+                    <p className="font-medium">{reservation.special_requests}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Modals */}
+      <CheckInModal
+        reservation={reservation}
+        isOpen={showCheckInModal}
+        onClose={() => setShowCheckInModal(false)}
+        onConfirm={handleCheckIn}
+      />
+      
+      <CheckOutModal
+        reservation={reservation}
+        consumptions={consumptions}
+        isOpen={showCheckOutModal}
+        onClose={() => setShowCheckOutModal(false)}
+        onConfirm={handleCheckOut}
+        onFinalizeConsumptions={handleFinalizeConsumptions}
+      />
+      
+      <CancelReservationModal
+        reservation={reservation}
+        isOpen={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        onConfirm={handleCancel}
+      />
     </div>
   )
 }

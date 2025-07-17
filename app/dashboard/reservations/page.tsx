@@ -3,9 +3,14 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { formatDate } from '@/lib/utils'
-import { Plus, Search, Filter, Calendar, User, Bed, DollarSign, Clock, Eye, Edit, Trash2 } from 'lucide-react'
+import { Plus, Search, Filter, Calendar, User, Bed, DollarSign, Clock, Eye, Edit, Trash2, AlertTriangle, Bell, LogIn, LogOut, X } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
+import ReservationStatus from '@/components/dashboard/ReservationStatus'
+import CheckInModal from '@/components/dashboard/CheckInModal'
+import CheckOutModal from '@/components/dashboard/CheckOutModal'
+import CancelReservationModal from '@/components/dashboard/CancelReservationModal'
+import { performCheckIn, performCheckOut, cancelReservation, hasUnpaidConsumptions, finalizeConsumptions } from '@/app/dashboard/reservations/[id]/details/actions'
 
 interface Reservation {
   id: string
@@ -65,6 +70,16 @@ export default function ReservationsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [dateFilter, setDateFilter] = useState<string>('all')
+  const [actionLoading, setActionLoading] = useState(false)
+  
+  // Modal states
+  const [selectedReservation, setSelectedReservation] = useState<ReservationWithDetails | null>(null)
+  const [checkInModalOpen, setCheckInModalOpen] = useState(false)
+  const [checkOutModalOpen, setCheckOutModalOpen] = useState(false)
+  const [cancelModalOpen, setCancelModalOpen] = useState(false)
+  const [hasConsumptions, setHasConsumptions] = useState(false)
+  const [consumptions, setConsumptions] = useState<any[]>([])
+  
   const supabase = createClient()
 
   useEffect(() => {
@@ -110,6 +125,149 @@ export default function ReservationsPage() {
       console.error('Error:', error)
     }
   }
+  
+  // Function to open check-in modal
+  const openCheckInModal = async (reservation: ReservationWithDetails) => {
+    setSelectedReservation(reservation)
+    setCheckInModalOpen(true)
+  }
+  
+  // Function to open check-out modal
+  const openCheckOutModal = async (reservation: ReservationWithDetails) => {
+    setSelectedReservation(reservation)
+    
+    try {
+      // Check if there are unpaid consumptions
+      const hasUnpaid = await hasUnpaidConsumptions(reservation.id)
+      setHasConsumptions(hasUnpaid)
+      
+      // Fetch consumptions
+      const { data, error } = await supabase
+        .from('room_consumptions')
+        .select(`
+          *,
+          product:products(*)
+        `)
+        .eq('reservation_id', reservation.id)
+      
+      if (error) throw error
+      setConsumptions(data || [])
+      
+      // Open modal
+      setCheckOutModalOpen(true)
+    } catch (error) {
+      toast.error('Erro ao verificar consumos')
+      console.error('Error:', error)
+    }
+  }
+  
+  // Function to open cancel modal
+  const openCancelModal = (reservation: ReservationWithDetails) => {
+    setSelectedReservation(reservation)
+    setCancelModalOpen(true)
+  }
+  
+  // Function to handle check-in
+  const handleCheckIn = async () => {
+    if (!selectedReservation) return
+    
+    setActionLoading(true)
+    try {
+      await performCheckIn(selectedReservation.id)
+      
+      // Update reservation in the list
+      const updatedReservations = reservations.map(r => 
+        r.id === selectedReservation.id ? { ...r, status: 'checked_in' as const } : r
+      )
+      setReservations(updatedReservations)
+      
+      toast.success('Check-in realizado com sucesso!')
+      setCheckInModalOpen(false)
+    } catch (error: any) {
+      toast.error(`Erro ao realizar check-in: ${error.message || 'Erro desconhecido'}`)
+      console.error('Error:', error)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+  
+  // Function to handle check-out
+  const handleCheckOut = async () => {
+    if (!selectedReservation) return
+    
+    setActionLoading(true)
+    try {
+      await performCheckOut(selectedReservation.id, consumptions)
+      
+      // Update reservation in the list
+      const updatedReservations = reservations.map(r => 
+        r.id === selectedReservation.id ? { ...r, status: 'checked_out' as const } : r
+      )
+      setReservations(updatedReservations)
+      
+      toast.success('Check-out realizado com sucesso!')
+      setCheckOutModalOpen(false)
+    } catch (error: any) {
+      toast.error(`Erro ao realizar check-out: ${error.message || 'Erro desconhecido'}`)
+      console.error('Error:', error)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+  
+  // Function to handle cancel
+  const handleCancel = async (reason: string) => {
+    if (!selectedReservation) return
+    
+    setActionLoading(true)
+    try {
+      await cancelReservation(selectedReservation.id, reason)
+      
+      // Update reservation in the list
+      const updatedReservations = reservations.map(r => 
+        r.id === selectedReservation.id ? { ...r, status: 'cancelled' as const } : r
+      )
+      setReservations(updatedReservations)
+      
+      toast.success('Reserva cancelada com sucesso!')
+      setCancelModalOpen(false)
+    } catch (error: any) {
+      toast.error(`Erro ao cancelar reserva: ${error.message || 'Erro desconhecido'}`)
+      console.error('Error:', error)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+  
+  // Function to handle finalize consumptions
+  const handleFinalizeConsumptions = async () => {
+    if (!selectedReservation) return
+    
+    setActionLoading(true)
+    try {
+      await finalizeConsumptions(selectedReservation.id)
+      
+      // Refresh consumptions
+      const { data, error } = await supabase
+        .from('room_consumptions')
+        .select(`
+          *,
+          product:products(*)
+        `)
+        .eq('reservation_id', selectedReservation.id)
+      
+      if (error) throw error
+      setConsumptions(data || [])
+      setHasConsumptions(false)
+      
+      toast.success('Consumos finalizados com sucesso!')
+    } catch (error: any) {
+      toast.error(`Erro ao finalizar consumos: ${error.message || 'Erro desconhecido'}`)
+      console.error('Error:', error)
+    } finally {
+      setActionLoading(false)
+    }
+  }
 
   const getGuestName = (guest: Guest | null | undefined) => {
     if (!guest) return 'Hóspede indefinido'
@@ -130,13 +288,65 @@ export default function ReservationsPage() {
     )
   }
 
+  // Helper function to check if a reservation needs attention
+  const needsAttention = (reservation: ReservationWithDetails) => {
+    const today = new Date()
+    const todayLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+    
+    // Check if check-out is today or tomorrow for checked-in reservations
+    if (reservation.status === 'checked_in') {
+      const checkOutDate = new Date(reservation.check_out_date + 'T00:00:00')
+      const tomorrowLocal = new Date(todayLocal.getTime() + 24 * 60 * 60 * 1000)
+      
+      return checkOutDate.toDateString() === todayLocal.toDateString() || 
+             checkOutDate.toDateString() === tomorrowLocal.toDateString()
+    }
+    
+    // Check if check-in is today for confirmed reservations
+    if (reservation.status === 'confirmed') {
+      const checkInDate = new Date(reservation.check_in_date + 'T00:00:00')
+      return checkInDate.toDateString() === todayLocal.toDateString()
+    }
+    
+    return false
+  }
+  
+  // Helper function to get attention reason
+  const getAttentionReason = (reservation: ReservationWithDetails) => {
+    const today = new Date()
+    const todayLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+    
+    if (reservation.status === 'checked_in') {
+      const checkOutDate = new Date(reservation.check_out_date + 'T00:00:00')
+      
+      if (checkOutDate.toDateString() === todayLocal.toDateString()) {
+        return 'Check-out hoje'
+      }
+      
+      const tomorrowLocal = new Date(todayLocal.getTime() + 24 * 60 * 60 * 1000)
+      if (checkOutDate.toDateString() === tomorrowLocal.toDateString()) {
+        return 'Check-out amanhã'
+      }
+    }
+    
+    if (reservation.status === 'confirmed') {
+      const checkInDate = new Date(reservation.check_in_date + 'T00:00:00')
+      if (checkInDate.toDateString() === todayLocal.toDateString()) {
+        return 'Check-in hoje'
+      }
+    }
+    
+    return ''
+  }
+
   const filteredReservations = reservations.filter(reservation => {
     const matchesSearch = searchTerm === '' || 
       getGuestName(reservation.guest).toLowerCase().includes(searchTerm.toLowerCase()) ||
       (reservation.room?.room_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (reservation.guest?.email || '').toLowerCase().includes(searchTerm.toLowerCase())
 
-    const matchesStatus = statusFilter === 'all' || reservation.status === statusFilter
+    const matchesStatus = statusFilter === 'all' || 
+                          (statusFilter === 'attention' ? needsAttention(reservation) : reservation.status === statusFilter)
 
     let matchesDate = true
     if (dateFilter !== 'all') {
@@ -144,10 +354,15 @@ export default function ReservationsPage() {
       const today = new Date()
       const todayLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate())
       const checkInDate = new Date(reservation.check_in_date + 'T00:00:00')
+      const checkOutDate = new Date(reservation.check_out_date + 'T00:00:00')
       
       switch (dateFilter) {
         case 'today':
           matchesDate = checkInDate.toDateString() === todayLocal.toDateString()
+          break
+        case 'tomorrow':
+          const tomorrowLocal = new Date(todayLocal.getTime() + 24 * 60 * 60 * 1000)
+          matchesDate = checkInDate.toDateString() === tomorrowLocal.toDateString()
           break
         case 'week':
           const weekFromNow = new Date(todayLocal.getTime() + 7 * 24 * 60 * 60 * 1000)
@@ -156,6 +371,9 @@ export default function ReservationsPage() {
         case 'month':
           const monthFromNow = new Date(todayLocal.getFullYear(), todayLocal.getMonth() + 1, todayLocal.getDate())
           matchesDate = checkInDate >= todayLocal && checkInDate <= monthFromNow
+          break
+        case 'checkout-today':
+          matchesDate = checkOutDate.toDateString() === todayLocal.toDateString()
           break
       }
     }
@@ -167,6 +385,7 @@ export default function ReservationsPage() {
     total: reservations.length,
     confirmed: reservations.filter(r => r.status === 'confirmed').length,
     checkedIn: reservations.filter(r => r.status === 'checked_in').length,
+    needsAttention: reservations.filter(r => needsAttention(r)).length,
     revenue: reservations.reduce((sum, r) => sum + r.total_amount, 0)
   }
 
@@ -195,7 +414,7 @@ export default function ReservationsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
         <div className="card">
           <div className="flex items-center">
             <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -232,6 +451,22 @@ export default function ReservationsPage() {
           </div>
         </div>
         
+        <div className="card relative group">
+          <div className="flex items-center">
+            <div className="h-12 w-12 bg-amber-100 rounded-lg flex items-center justify-center">
+              <AlertTriangle className="h-6 w-6 text-amber-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Precisa de Atenção</p>
+              <p className="text-2xl font-bold text-amber-600">{stats.needsAttention}</p>
+            </div>
+          </div>
+          <div className="absolute invisible group-hover:visible bg-gray-800 text-white text-xs rounded py-1 px-2 bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 z-10">
+            Reservas que precisam de atenção imediata: check-in hoje, check-out hoje ou amanhã.
+            <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+          </div>
+        </div>
+        
         <div className="card">
           <div className="flex items-center">
             <div className="h-12 w-12 bg-yellow-100 rounded-lg flex items-center justify-center">
@@ -261,33 +496,61 @@ export default function ReservationsPage() {
             />
           </div>
           
-          <select
-            className="input"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <option value="all">Todos os Status</option>
-            <option value="confirmed">Confirmada</option>
-            <option value="checked_in">Check-in</option>
-            <option value="checked_out">Check-out</option>
-            <option value="cancelled">Cancelada</option>
-            <option value="no_show">Não Compareceu</option>
-          </select>
+          <div className="relative">
+            <select
+              className="input pr-10 appearance-none"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="all">Todos os Status</option>
+              <option value="attention" className="text-yellow-600 font-medium">⚠️ Precisa de Atenção</option>
+              <optgroup label="Status">
+                <option value="confirmed">Confirmada</option>
+                <option value="checked_in">Check-in</option>
+                <option value="checked_out">Check-out</option>
+                <option value="cancelled">Cancelada</option>
+                <option value="no_show">Não Compareceu</option>
+              </optgroup>
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+              <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+              </svg>
+            </div>
+          </div>
           
-          <select
-            className="input"
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-          >
-            <option value="all">Todas as Datas</option>
-            <option value="today">Hoje</option>
-            <option value="week">Próximos 7 dias</option>
-            <option value="month">Próximo mês</option>
-          </select>
+          <div className="relative">
+            <select
+              className="input pr-10 appearance-none"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+            >
+              <option value="all">Todas as Datas</option>
+              <optgroup label="Check-in">
+                <option value="today">Check-in Hoje</option>
+                <option value="tomorrow">Check-in Amanhã</option>
+                <option value="week">Próximos 7 dias</option>
+                <option value="month">Próximo mês</option>
+              </optgroup>
+              <optgroup label="Check-out">
+                <option value="checkout-today">Check-out Hoje</option>
+              </optgroup>
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+              <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+              </svg>
+            </div>
+          </div>
           
           <div className="flex items-center text-sm text-gray-600">
             <Filter className="h-4 w-4 mr-2" />
             {filteredReservations.length} de {reservations.length} reservas
+            {statusFilter === 'attention' && stats.needsAttention > 0 && (
+              <span className="ml-2 bg-yellow-100 text-yellow-800 text-xs px-2 py-0.5 rounded-full">
+                {stats.needsAttention} precisam de atenção
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -340,16 +603,34 @@ export default function ReservationsPage() {
                   const checkOut = new Date(reservation.check_out_date + 'T00:00:00')
                   const nights = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24))
                   
+                  const requiresAttention = needsAttention(reservation);
+                  
                   return (
-                    <tr key={reservation.id} className="hover:bg-gray-50">
+                    <tr 
+                      key={reservation.id} 
+                      className={`hover:bg-gray-50 ${requiresAttention ? 'bg-yellow-50' : ''}`}
+                    >
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="h-10 w-10 bg-primary-100 rounded-full flex items-center justify-center">
                             <User className="h-5 w-5 text-primary-600" />
                           </div>
                           <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900">
-                              {getGuestName(reservation.guest)}
+                            <div className="flex items-center">
+                              <span className="text-sm font-medium text-gray-900">
+                                {getGuestName(reservation.guest)}
+                              </span>
+                              {requiresAttention && (
+                                <div className="relative group ml-2">
+                                  <span className="flex items-center text-yellow-600">
+                                    <AlertTriangle className="h-4 w-4" />
+                                  </span>
+                                  <div className="absolute invisible group-hover:visible bg-gray-800 text-white text-xs rounded py-1 px-2 left-full ml-2 w-32 z-10">
+                                    {getAttentionReason(reservation)}
+                                    <div className="absolute top-1/2 left-0 transform -translate-x-1 -translate-y-1/2 border-4 border-transparent border-r-gray-800"></div>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                             <div className="text-sm text-gray-500">
                               {reservation.guest?.email || 'Email não informado'}
@@ -379,7 +660,18 @@ export default function ReservationsPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        {getStatusBadge(reservation.status)}
+                        <div className="flex items-center">
+                          <ReservationStatus status={reservation.status} size="sm" />
+                          {requiresAttention && (
+                            <div className="relative group ml-2">
+                              <span className="h-2 w-2 bg-yellow-400 rounded-full animate-pulse block"></span>
+                              <div className="absolute invisible group-hover:visible bg-gray-800 text-white text-xs rounded py-1 px-2 bottom-full left-1/2 transform -translate-x-1/2 mb-1 w-32 z-10">
+                                {getAttentionReason(reservation)}
+                                <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">
@@ -391,26 +683,72 @@ export default function ReservationsPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end space-x-2">
+                          {/* Quick action buttons based on status */}
+                          {reservation.status === 'confirmed' && (
+                            <button
+                              onClick={() => openCheckInModal(reservation)}
+                              className="bg-green-100 text-green-700 hover:bg-green-200 p-1 rounded-full relative group"
+                              title="Realizar Check-in"
+                            >
+                              <LogIn className="h-4 w-4" />
+                              <div className="absolute invisible group-hover:visible bg-gray-800 text-white text-xs rounded py-1 px-2 right-full mr-2 w-32 z-10">
+                                Realizar Check-in
+                                <div className="absolute top-1/2 right-0 transform translate-x-1 -translate-y-1/2 border-4 border-transparent border-l-gray-800"></div>
+                              </div>
+                            </button>
+                          )}
+                          
+                          {reservation.status === 'checked_in' && (
+                            <button
+                              onClick={() => openCheckOutModal(reservation)}
+                              className="bg-gray-100 text-gray-700 hover:bg-gray-200 p-1 rounded-full relative group"
+                              title="Realizar Check-out"
+                            >
+                              <LogOut className="h-4 w-4" />
+                              <div className="absolute invisible group-hover:visible bg-gray-800 text-white text-xs rounded py-1 px-2 right-full mr-2 w-32 z-10">
+                                Realizar Check-out
+                                <div className="absolute top-1/2 right-0 transform translate-x-1 -translate-y-1/2 border-4 border-transparent border-l-gray-800"></div>
+                              </div>
+                            </button>
+                          )}
+                          
+                          {(reservation.status === 'confirmed' || reservation.status === 'checked_in') && (
+                            <button
+                              onClick={() => openCancelModal(reservation)}
+                              className="bg-red-100 text-red-700 hover:bg-red-200 p-1 rounded-full relative group"
+                              title="Cancelar Reserva"
+                            >
+                              <X className="h-4 w-4" />
+                              <div className="absolute invisible group-hover:visible bg-gray-800 text-white text-xs rounded py-1 px-2 right-full mr-2 w-32 z-10">
+                                Cancelar Reserva
+                                <div className="absolute top-1/2 right-0 transform translate-x-1 -translate-y-1/2 border-4 border-transparent border-l-gray-800"></div>
+                              </div>
+                            </button>
+                          )}
+                          
+                          {/* Standard action buttons */}
                           <Link
                             href={`/dashboard/reservations/${reservation.id}/details`}
-                            className="text-primary-600 hover:text-primary-900"
+                            className="text-primary-600 hover:text-primary-900 relative group"
                             title="Ver detalhes"
                           >
                             <Eye className="h-4 w-4" />
+                            <div className="absolute invisible group-hover:visible bg-gray-800 text-white text-xs rounded py-1 px-2 right-full mr-2 w-24 z-10">
+                              Ver detalhes
+                              <div className="absolute top-1/2 right-0 transform translate-x-1 -translate-y-1/2 border-4 border-transparent border-l-gray-800"></div>
+                            </div>
                           </Link>
-                          <Link
-                            href={`/dashboard/reservations/${reservation.id}`}
-                            className="text-blue-600 hover:text-blue-900"
-                            title="Editar"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Link>
+                          
                           <button
                             onClick={() => deleteReservation(reservation.id)}
-                            className="text-red-600 hover:text-red-900"
+                            className="text-red-600 hover:text-red-900 relative group"
                             title="Excluir"
                           >
                             <Trash2 className="h-4 w-4" />
+                            <div className="absolute invisible group-hover:visible bg-gray-800 text-white text-xs rounded py-1 px-2 right-full mr-2 w-16 z-10">
+                              Excluir
+                              <div className="absolute top-1/2 right-0 transform translate-x-1 -translate-y-1/2 border-4 border-transparent border-l-gray-800"></div>
+                            </div>
                           </button>
                         </div>
                       </td>
@@ -422,6 +760,37 @@ export default function ReservationsPage() {
           </div>
         )}
       </div>
+      
+      {/* Modals */}
+      {selectedReservation && (
+        <>
+          {/* Check-in Modal */}
+          <CheckInModal
+            reservation={selectedReservation}
+            isOpen={checkInModalOpen}
+            onClose={() => setCheckInModalOpen(false)}
+            onConfirm={handleCheckIn}
+          />
+          
+          {/* Check-out Modal */}
+          <CheckOutModal
+            reservation={selectedReservation}
+            consumptions={consumptions}
+            isOpen={checkOutModalOpen}
+            onClose={() => setCheckOutModalOpen(false)}
+            onConfirm={handleCheckOut}
+            onFinalizeConsumptions={handleFinalizeConsumptions}
+          />
+          
+          {/* Cancel Modal */}
+          <CancelReservationModal
+            reservation={selectedReservation}
+            isOpen={cancelModalOpen}
+            onClose={() => setCancelModalOpen(false)}
+            onConfirm={handleCancel}
+          />
+        </>
+      )}
     </div>
   )
 }

@@ -216,16 +216,22 @@ export default function CheckOutModal({
   if (!isOpen) return null;
   
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
-        <div className="flex items-center mb-4">
-          <div className="p-2 bg-gray-100 rounded-lg">
-            <LogOut className="h-5 w-5 text-gray-600" />
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg max-w-lg w-full max-h-[90vh] flex flex-col">
+        {/* Modal Header */}
+        <div className="p-6 pb-4 flex-shrink-0">
+          <div className="flex items-center">
+            <div className="p-2 bg-gray-100 rounded-lg">
+              <LogOut className="h-5 w-5 text-gray-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 ml-2">
+              Realizar Check-out
+            </h3>
           </div>
-          <h3 className="text-lg font-semibold text-gray-900 ml-2">
-            Realizar Check-out
-          </h3>
         </div>
+        
+        {/* Scrollable Content Area */}
+        <div className="flex-1 overflow-y-auto px-6">
         
         {/* Reservation info */}
         <div className="mb-6 bg-gray-50 p-3 rounded-lg">
@@ -324,39 +330,6 @@ export default function CheckOutModal({
                     </p>
                   </div>
                 </div>
-              )}
-            </div>
-            
-            <div className="mt-6 flex gap-3 justify-end">
-              <button
-                onClick={onClose}
-                className="btn-secondary"
-                disabled={loading}
-              >
-                Cancelar
-              </button>
-              {hasUnpaidConsumptions ? (
-                <button
-                  onClick={handleFinalizeConsumptions}
-                  disabled={loading}
-                  className="btn-primary"
-                >
-                  {loading ? (
-                    <div className="flex items-center">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Processando...
-                    </div>
-                  ) : (
-                    'Finalizar Consumos'
-                  )}
-                </button>
-              ) : (
-                <button
-                  onClick={() => setStep(2)}
-                  className="btn-primary"
-                >
-                  Continuar
-                </button>
               )}
             </div>
           </>
@@ -500,8 +473,49 @@ export default function CheckOutModal({
                 </div>
               </div>
             </div>
-            
-            <div className="mt-6 flex gap-3 justify-end">
+          </>
+        )}
+        </div>
+        
+        {/* Modal Footer */}
+        <div className="p-6 pt-4 flex-shrink-0 border-t border-gray-100">
+          {step === 1 && (
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={onClose}
+                className="btn-secondary"
+                disabled={loading}
+              >
+                Cancelar
+              </button>
+              {hasUnpaidConsumptions ? (
+                <button
+                  onClick={handleFinalizeConsumptions}
+                  disabled={loading}
+                  className="btn-primary"
+                >
+                  {loading ? (
+                    <div className="flex items-center">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Processando...
+                    </div>
+                  ) : (
+                    'Finalizar Consumos'
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={() => setStep(2)}
+                  className="btn-primary"
+                >
+                  Continuar
+                </button>
+              )}
+            </div>
+          )}
+          
+          {step === 2 && (
+            <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setStep(1)}
                 className="btn-secondary"
@@ -524,8 +538,8 @@ export default function CheckOutModal({
                 )}
               </button>
             </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase-client'
 import { formatCurrency, calculateNights, generateReservationCode, formatDateForInput, getLocalISOString, createTimezoneAwareDate } from '@/lib/utils'
 import { ArrowLeft, Save, RefreshCw, User, Bed, Calendar, DollarSign, FileText } from 'lucide-react'
@@ -38,8 +38,9 @@ interface ReservationFormData {
   special_requests: string
 }
 
-export default function NewReservationPage() {
+function NewReservationForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
   const [loading, setLoading] = useState(false)
   const [guests, setGuests] = useState<Guest[]>([])
@@ -61,6 +62,17 @@ export default function NewReservationPage() {
     fetchInitialData()
     loadHotelSettings()
   }, [])
+
+  useEffect(() => {
+    const roomIdParam = searchParams.get('room_id')
+    if (roomIdParam) {
+      setFormData(prev => ({
+        ...prev,
+        room_id: roomIdParam,
+        check_in_date: prev.check_in_date || formatDateForInput(new Date())
+      }))
+    }
+  }, [searchParams])
 
   useEffect(() => {
     if (formData.check_in_date && rooms.length > 0) {
@@ -667,5 +679,17 @@ export default function NewReservationPage() {
         </div>
       </form>
     </div>
+  )
+}
+
+export default function NewReservationPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+      </div>
+    }>
+      <NewReservationForm />
+    </Suspense>
   )
 }

@@ -211,41 +211,81 @@ export default function RoomsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {filteredRooms.map((room) => (
-            <div key={room.id} className="card-hover">
-              {/* Room Image Placeholder */}
-              <div className="h-32 bg-gradient-to-br from-primary-100 to-primary-200 rounded-lg mb-4 flex items-center justify-center">
-                <Bed className="h-12 w-12 text-primary-600" />
-              </div>
-              
-              {/* Room Info */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Quarto {room.room_number}
-                  </h3>
-                  <span className={`status-badge ${getStatusColor(room.status)}`}>
-                    {getStatusText(room.status)}
-                  </span>
-                </div>
-                
-                <div className="space-y-2">
-                  <div className="flex items-center text-sm text-gray-600">
-                    <Bed className="h-4 w-4 mr-2" />
-                    {room.room_type}
+            <div key={room.id} className="card-hover flex flex-col justify-between h-full">
+              <div>
+                {room.status === 'available' ? (
+                  <Link href={`/dashboard/reservations/new?room_id=${room.id}`} className="block group cursor-pointer">
+                    {/* Room Image Placeholder */}
+                    <div className="h-32 bg-gradient-to-br from-primary-100 to-primary-200 rounded-lg mb-4 flex items-center justify-center transition-all duration-300 group-hover:from-primary-200 group-hover:to-primary-300">
+                      <Bed className="h-12 w-12 text-primary-600 transition-transform duration-300 group-hover:scale-110" />
+                    </div>
+                    
+                    {/* Room Info */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold text-gray-900 group-hover:text-primary-700 transition-colors">
+                          Quarto {room.room_number}
+                        </h3>
+                        <span className={`status-badge ${getStatusColor(room.status)}`}>
+                          {getStatusText(room.status)}
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <div className="flex items-center text-sm text-gray-600">
+                          <Bed className="h-4 w-4 mr-2" />
+                          {room.room_type}
+                        </div>
+                        <div className="flex items-center text-sm text-gray-600">
+                          <Users className="h-4 w-4 mr-2" />
+                          {room.capacity} hóspedes
+                        </div>
+                        <div className="flex items-center text-sm text-gray-600">
+                          <DollarSign className="h-4 w-4 mr-2" />
+                          {formatCurrency(room.price_per_night)}/noite
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                ) : (
+                  <div>
+                    {/* Room Image Placeholder */}
+                    <div className="h-32 bg-gradient-to-br from-primary-100 to-primary-200 rounded-lg mb-4 flex items-center justify-center">
+                      <Bed className="h-12 w-12 text-primary-600" />
+                    </div>
+                    
+                    {/* Room Info */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          Quarto {room.room_number}
+                        </h3>
+                        <span className={`status-badge ${getStatusColor(room.status)}`}>
+                          {getStatusText(room.status)}
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <div className="flex items-center text-sm text-gray-600">
+                          <Bed className="h-4 w-4 mr-2" />
+                          {room.room_type}
+                        </div>
+                        <div className="flex items-center text-sm text-gray-600">
+                          <Users className="h-4 w-4 mr-2" />
+                          {room.capacity} hóspedes
+                        </div>
+                        <div className="flex items-center text-sm text-gray-600">
+                          <DollarSign className="h-4 w-4 mr-2" />
+                          {formatCurrency(room.price_per_night)}/noite
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center text-sm text-gray-600">
-                    <Users className="h-4 w-4 mr-2" />
-                    {room.capacity} hóspedes
-                  </div>
-                  <div className="flex items-center text-sm text-gray-600">
-                    <DollarSign className="h-4 w-4 mr-2" />
-                    {formatCurrency(room.price_per_night)}/noite
-                  </div>
-                </div>
+                )}
                 
                 {/* Amenities */}
                 {room.amenities && room.amenities.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1 mt-3">
                     {room.amenities.slice(0, 3).map((amenity, index) => (
                       <span
                         key={index}
@@ -261,27 +301,27 @@ export default function RoomsPage() {
                     )}
                   </div>
                 )}
+              </div>
+              
+              {/* Actions */}
+              <div className="flex items-center justify-between pt-3 border-t border-gray-100 mt-3">
+                <select
+                  value={room.status}
+                  onChange={(e) => updateRoomStatus(room.id, e.target.value)}
+                  className="text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                >
+                  <option value="available">Disponível</option>
+                  <option value="occupied">Ocupado</option>
+                  <option value="maintenance">Manutenção</option>
+                  <option value="reserved">Reservado</option>
+                </select>
                 
-                {/* Actions */}
-                <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                  <select
-                    value={room.status}
-                    onChange={(e) => updateRoomStatus(room.id, e.target.value)}
-                    className="text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                  >
-                    <option value="available">Disponível</option>
-                    <option value="occupied">Ocupado</option>
-                    <option value="maintenance">Manutenção</option>
-                    <option value="reserved">Reservado</option>
-                  </select>
-                  
-                  <Link
-                    href={`/dashboard/rooms/${room.id}`}
-                    className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
-                  >
-                    <Settings className="h-4 w-4" />
-                  </Link>
-                </div>
+                <Link
+                  href={`/dashboard/rooms/${room.id}`}
+                  className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <Settings className="h-4 w-4" />
+                </Link>
               </div>
             </div>
           ))}

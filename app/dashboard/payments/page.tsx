@@ -111,7 +111,7 @@ export default function PaymentsPage() {
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      setPayments(data || [])
+      setPayments((data || []) as any)
     } catch (error) {
       toast.error('Erro ao carregar pagamentos')
       console.error('Error:', error)

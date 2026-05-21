@@ -341,32 +341,27 @@ export function validateCheckOut(
     return result;
   }
 
-  // Check if there are pending consumptions
+  // Check if there are pending consumptions - show warning but allow check-out
+  // The system will automatically finalize pending consumptions during check-out
   const pendingConsumptions = consumptions.filter(c => c.status === 'pending');
   if (pendingConsumptions.length > 0) {
-    const result: ValidationResult = {
-      valid: false,
-      message: `Existem ${pendingConsumptions.length} consumo(s) pendente(s) que precisam ser finalizados antes do check-out.`,
-      severity: 'error',
+    // Log the pending consumptions for audit purposes
+    console.log('⚠️ [validateCheckOut] Consumos pendentes serão finalizados automaticamente:', {
+      reservation_id: reservation.id,
+      pending_consumptions: pendingConsumptions.length,
+      consumption_ids: pendingConsumptions.map(c => c.id)
+    });
+    
+    // Return valid with warning message instead of blocking the check-out
+    return {
+      valid: true,
+      message: `Existem ${pendingConsumptions.length} consumo(s) pendente(s) que serão finalizados automaticamente durante o check-out.`,
+      severity: 'warning',
       suggestions: [
-        'Finalize os consumos pendentes',
-        'Verifique se todos os itens consumidos foram registrados'
+        'Os consumos pendentes serão incluídos na conta final',
+        'Verifique se todos os itens consumidos foram registrados corretamente'
       ]
     };
-    
-    logValidationError(
-      'check-out',
-      {
-        reservation_id: reservation.id,
-        pending_consumptions: pendingConsumptions.length,
-        consumption_ids: pendingConsumptions.map(c => c.id),
-        error: result.message
-      },
-      'reservation',
-      reservation.id
-    );
-    
-    return result;
   }
 
   // Check if the check-out date is in the future or past

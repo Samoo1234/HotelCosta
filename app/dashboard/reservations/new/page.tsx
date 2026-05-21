@@ -63,14 +63,14 @@ export default function NewReservationPage() {
   }, [])
 
   useEffect(() => {
-    if (formData.check_in_date) {
+    if (formData.check_in_date && rooms.length > 0) {
       checkRoomAvailability()
     }
-  }, [formData.check_in_date, formData.check_out_date])
+  }, [formData.check_in_date, formData.check_out_date, rooms])
 
   useEffect(() => {
     calculateTotalAmount()
-  }, [formData.room_id, formData.check_in_date, formData.check_out_date])
+  }, [formData.room_id, formData.check_in_date, formData.check_out_date, hotelSettings])
 
   const fetchInitialData = async () => {
     try {
@@ -79,8 +79,8 @@ export default function NewReservationPage() {
         supabase.from('rooms').select('*').order('room_number')
       ])
 
-      if (guestsRes.data) setGuests(guestsRes.data)
-      if (roomsRes.data) setRooms(roomsRes.data)
+      if (guestsRes.data) setGuests(guestsRes.data as any)
+      if (roomsRes.data) setRooms(roomsRes.data as any)
     } catch (error) {
       toast.error('Erro ao carregar dados')
       console.error('Error:', error)
@@ -95,8 +95,15 @@ export default function NewReservationPage() {
         .limit(1)
         .single()
 
-      if (error) throw error
-      setHotelSettings(data)
+      if (error) {
+        console.warn('Usando valores padrão para configurações do hotel:', error.message)
+        setHotelSettings({ check_in_time: '14:00', check_out_time: '12:00' })
+      } else {
+        setHotelSettings({
+          check_in_time: data.check_in_time || '14:00',
+          check_out_time: data.check_out_time || '12:00'
+        })
+      }
     } catch (error) {
       console.error('Error loading hotel settings:', error)
       // Usar valores padrão se não conseguir carregar
@@ -105,7 +112,10 @@ export default function NewReservationPage() {
   }
 
   const checkRoomAvailability = async () => {
-    if (!formData.check_in_date) return
+    if (!formData.check_in_date || rooms.length === 0) {
+      console.log('Aguardando dados para verificar disponibilidade:', { check_in_date: formData.check_in_date, roomsCount: rooms.length })
+      return
+    }
 
     try {
       let conflictQuery = supabase
@@ -133,9 +143,18 @@ export default function NewReservationPage() {
       if (error) throw error
 
       const occupiedRoomIds = conflictingReservations?.map(r => r.room_id) || []
+      console.log('Verificando disponibilidade de quartos:', { 
+        totalRooms: rooms.length, 
+        occupiedRoomIds,
+        roomsStatus: rooms.map(r => ({ id: r.id, number: r.room_number, status: r.status }))
+      })
+      // Aceitar quartos com status 'available' ou 'reserved' (que não estejam em conflito)
+      // Também aceitar quartos sem status definido (null/undefined)
       const available = rooms.filter(room => 
-        room.status === 'available' && !occupiedRoomIds.includes(room.id)
+        (room.status === 'available' || room.status === 'reserved' || !room.status) && 
+        !occupiedRoomIds.includes(room.id)
       )
+      console.log('Quartos disponíveis:', available.map(r => r.room_number))
       
       setAvailableRooms(available)
       

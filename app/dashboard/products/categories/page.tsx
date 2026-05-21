@@ -43,13 +43,14 @@ export default function ProductCategoriesPage() {
 
       if (error) throw error
 
-      // Processar dados para incluir contagem de produtos
       const categoriesWithCount = data?.map(category => ({
         ...category,
-        product_count: category.products?.[0]?.count || 0
+        display_order: category.display_order ?? 0,
+        active: category.active ?? false,
+        product_count: (category.products as any)?.[0]?.count || 0
       })) || []
 
-      setCategories(categoriesWithCount)
+      setCategories(categoriesWithCount as any)
     } catch (error) {
       toast.error('Erro ao carregar categorias')
       console.error('Error:', error)

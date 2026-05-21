@@ -58,7 +58,7 @@ export default function ProductsPage() {
         .order('display_order')
 
       if (categoriesError) throw categoriesError
-      setCategories(categoriesData || [])
+      setCategories((categoriesData || []) as any)
 
       // Buscar produtos
       const { data: productsData, error: productsError } = await supabase
@@ -70,7 +70,7 @@ export default function ProductsPage() {
         .order('name')
 
       if (productsError) throw productsError
-      setProducts(productsData || [])
+      setProducts((productsData || []) as any)
     } catch (error) {
       toast.error('Erro ao carregar produtos')
       console.error('Error:', error)

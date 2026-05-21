@@ -53,9 +53,9 @@ export default function RecentReservations() {
           supabase.from('rooms').select('*'),
         ])
 
-        if (reservationsRes.data) setReservations(reservationsRes.data)
-        if (guestsRes.data) setGuests(guestsRes.data)
-        if (roomsRes.data) setRooms(roomsRes.data)
+        if (reservationsRes.data) setReservations(reservationsRes.data as any)
+        if (guestsRes.data) setGuests(guestsRes.data as any)
+        if (roomsRes.data) setRooms(roomsRes.data as any)
       } catch (error) {
         console.error('Error fetching data:', error)
       } finally {

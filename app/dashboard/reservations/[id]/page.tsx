@@ -75,13 +75,16 @@ export default function EditReservationPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [hotelSettings, setHotelSettings] = useState<{check_in_time: string, check_out_time: string, timezone: string} | null>(null)
 
+  const rawId = params?.id
+  const reservationId = (Array.isArray(rawId) ? rawId[0] : rawId) || ''
+
   useEffect(() => {
-    if (params.id) {
-      fetchReservation()
+    if (reservationId) {
+      fetchReservation(reservationId)
       fetchInitialData()
       loadHotelSettings()
     }
-  }, [params.id])
+  }, [reservationId])
 
   useEffect(() => {
     if (formData.check_in_date && formData.check_out_date && reservation) {
@@ -93,7 +96,7 @@ export default function EditReservationPage() {
     calculateTotalAmount()
   }, [formData.room_id, formData.check_in_date, formData.check_out_date])
 
-  const fetchReservation = async () => {
+  const fetchReservation = async (id: string) => {
     try {
       const { data, error } = await supabase
         .from('reservations')
@@ -102,20 +105,20 @@ export default function EditReservationPage() {
           guest:guests(*),
           room:rooms(*)
         `)
-        .eq('id', params.id)
+        .eq('id', id)
         .single()
 
       if (error) throw error
       if (!data) throw new Error('Reserva não encontrada')
 
-      setReservation(data)
+      setReservation(data as any)
       setFormData({
-        guest_id: data.guest_id,
-        room_id: data.room_id,
-        check_in_date: data.check_in_date,
-        check_out_date: data.check_out_date,
-        total_amount: data.total_amount,
-        status: data.status,
+        guest_id: data.guest_id || '',
+        room_id: data.room_id || '',
+        check_in_date: data.check_in_date || '',
+        check_out_date: data.check_out_date || '',
+        total_amount: data.total_amount || 0,
+        status: (data.status || 'confirmed') as any,
         special_requests: data.special_requests || ''
       })
     } catch (error) {
@@ -132,8 +135,8 @@ export default function EditReservationPage() {
         supabase.from('rooms').select('*').order('room_number')
       ])
 
-      if (guestsRes.data) setGuests(guestsRes.data)
-      if (roomsRes.data) setRooms(roomsRes.data)
+      if (guestsRes.data) setGuests(guestsRes.data as any)
+      if (roomsRes.data) setRooms(roomsRes.data as any)
     } catch (error) {
       toast.error('Erro ao carregar dados')
       console.error('Error:', error)

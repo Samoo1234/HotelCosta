@@ -91,10 +91,16 @@ export default function PaymentDetailsPage({ params }: { params: { id: string } 
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const supabase = createClient()
 
-  const [editData, setEditData] = useState({
+  const [editData, setEditData] = useState<{
+    amount: number
+    payment_method: string
+    payment_status: 'pending' | 'completed' | 'failed' | 'refunded'
+    transaction_id: string
+    payment_date: string
+  }>({
     amount: 0,
     payment_method: '',
-    payment_status: 'pending' as const,
+    payment_status: 'pending',
     transaction_id: '',
     payment_date: ''
   })
@@ -120,11 +126,11 @@ export default function PaymentDetailsPage({ params }: { params: { id: string } 
 
       if (error) throw error
       
-      setPayment(data)
+      setPayment(data as any)
       setEditData({
         amount: data.amount,
         payment_method: data.payment_method,
-        payment_status: data.payment_status,
+        payment_status: (data.payment_status || 'pending') as any,
         transaction_id: data.transaction_id || '',
         payment_date: data.payment_date.split('T')[0]
       })

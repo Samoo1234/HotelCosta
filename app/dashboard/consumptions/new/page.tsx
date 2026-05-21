@@ -10,7 +10,7 @@ import { formatCurrency, formatDate, getLocalISOString } from '@/lib/utils'
 
 interface Guest {
   id: string
-  client_type: 'individual' | 'company'
+  client_type: string | null
   first_name: string | null
   last_name: string | null
   company_name: string | null
@@ -26,32 +26,32 @@ interface Room {
 
 interface Reservation {
   id: string
-  guest_id: string
-  room_id: string
+  guest_id: string | null
+  room_id: string | null
   check_in_date: string
-  check_out_date: string
-  status: string
-  guest: Guest
-  room: Room
+  check_out_date: string | null
+  status: string | null
+  guest: Guest | null
+  room: Room | null
 }
 
 interface Product {
   id: string
   name: string
   price: number
-  unit: string
-  stock_quantity: number
-  active: boolean
+  unit: string | null
+  stock_quantity: number | null
+  active: boolean | null
   category?: {
     id: string
     name: string
-  }
+  } | null
 }
 
 interface ProductCategory {
   id: string
   name: string
-  active: boolean
+  active: boolean | null
 }
 
 interface ConsumptionFormData {
@@ -159,7 +159,7 @@ export default function NewConsumptionPage() {
       ...prev, 
       reservation_id: reservationId,
       // Se for empresa, padrão é empresa pagar, senão hóspede
-      payment_responsibility: reservation?.guest.client_type === 'company' ? 'company' : 'guest'
+      payment_responsibility: reservation?.guest?.client_type === 'company' ? 'company' : 'guest'
     }))
   }
 
@@ -194,7 +194,7 @@ export default function NewConsumptionPage() {
       return
     }
 
-    if (!selectedProduct || formData.quantity > selectedProduct.stock_quantity) {
+    if (!selectedProduct || formData.quantity > (selectedProduct.stock_quantity ?? 0)) {
       toast.error('Quantidade não disponível em estoque')
       return
     }
@@ -305,7 +305,7 @@ export default function NewConsumptionPage() {
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="font-medium text-gray-700">Quarto:</span>
-                      <p className="text-gray-900">{selectedReservation.room.room_number} ({selectedReservation.room.room_type})</p>
+                      <p className="text-gray-900">{selectedReservation.room?.room_number || 'N/A'} ({selectedReservation.room?.room_type || 'N/A'})</p>
                     </div>
                     <div>
                       <span className="font-medium text-gray-700">Hóspede:</span>
@@ -314,7 +314,7 @@ export default function NewConsumptionPage() {
                     <div>
                       <span className="font-medium text-gray-700">Tipo:</span>
                       <p className="text-gray-900">
-                        {selectedReservation.guest.client_type === 'company' ? 'Empresa' : 'Pessoa Física'}
+                        {selectedReservation.guest?.client_type === 'company' ? 'Empresa' : 'Pessoa Física'}
                       </p>
                     </div>
                     <div>
@@ -367,7 +367,7 @@ export default function NewConsumptionPage() {
                   <option value="">Selecione um produto...</option>
                   {filteredProducts.map(product => (
                     <option key={product.id} value={product.id}>
-                      {product.name} - {formatCurrency(product.price)} ({product.stock_quantity} disponível)
+                      {product.name} - {formatCurrency(product.price)} ({product.stock_quantity ?? 0} disponível)
                     </option>
                   ))}
                 </select>
@@ -378,11 +378,11 @@ export default function NewConsumptionPage() {
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="font-medium text-gray-700">Preço unitário:</span>
-                      <p className="text-gray-900">{formatCurrency(selectedProduct.price)} por {selectedProduct.unit}</p>
+                      <p className="text-gray-900">{formatCurrency(selectedProduct.price)} por {selectedProduct.unit || 'unidade'}</p>
                     </div>
                     <div>
                       <span className="font-medium text-gray-700">Estoque disponível:</span>
-                      <p className="text-gray-900">{selectedProduct.stock_quantity} {selectedProduct.unit}</p>
+                      <p className="text-gray-900">{(selectedProduct.stock_quantity ?? 0)} {selectedProduct.unit || ''}</p>
                     </div>
                     <div>
                       <span className="font-medium text-gray-700">Categoria:</span>
@@ -406,13 +406,13 @@ export default function NewConsumptionPage() {
                 <input
                   type="number"
                   min="1"
-                  max={selectedProduct?.stock_quantity || 1}
+                  max={selectedProduct?.stock_quantity ?? 1}
                   value={formData.quantity}
                   onChange={(e) => setFormData(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   required
                 />
-                {selectedProduct && formData.quantity > selectedProduct.stock_quantity && (
+                {selectedProduct && formData.quantity > (selectedProduct.stock_quantity ?? 0) && (
                   <p className="text-red-600 text-sm mt-1">
                     Quantidade não disponível em estoque
                   </p>
@@ -420,7 +420,7 @@ export default function NewConsumptionPage() {
               </div>
 
               {/* CAMPO ESPECÍFICO PARA ESCOLHER QUEM PAGA */}
-              {selectedReservation?.guest.client_type === 'company' && (
+              {selectedReservation?.guest?.client_type === 'company' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Quem vai pagar este consumo? *
@@ -456,7 +456,7 @@ export default function NewConsumptionPage() {
                       <label htmlFor="payment-company" className="ml-3 flex items-center">
                         <Building2 className="h-4 w-4 text-purple-600 mr-2" />
                         <span className="text-sm font-medium text-gray-700">
-                          Empresa ({selectedReservation.guest.trade_name || selectedReservation.guest.company_name})
+                          Empresa ({selectedReservation.guest?.trade_name || selectedReservation.guest?.company_name})
                         </span>
                       </label>
                     </div>
@@ -503,7 +503,7 @@ export default function NewConsumptionPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-primary-700">Quantidade:</span>
-                  <span className="font-medium text-primary-900">{formData.quantity} {selectedProduct.unit}</span>
+                  <span className="font-medium text-primary-900">{formData.quantity} {selectedProduct.unit || ''}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-primary-700">Preço unitário:</span>

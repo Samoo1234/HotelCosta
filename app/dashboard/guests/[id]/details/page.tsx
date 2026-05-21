@@ -77,12 +77,15 @@ export default function GuestDetailsPage() {
   const [hotelSettings, setHotelSettings] = useState<{check_in_time: string, check_out_time: string} | null>(null)
   const [stats, setStats] = useState<GuestStats | null>(null)
 
+  const rawId = params?.id
+  const guestId = (Array.isArray(rawId) ? rawId[0] : rawId) || ''
+
   useEffect(() => {
-    if (params.id) {
-      fetchGuestData()
+    if (guestId) {
+      fetchGuestData(guestId)
       loadHotelSettings()
     }
-  }, [params.id])
+  }, [guestId])
 
   const loadHotelSettings = async () => {
     try {
@@ -121,17 +124,17 @@ export default function GuestDetailsPage() {
     return Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)))
   }
 
-  const fetchGuestData = async () => {
+  const fetchGuestData = async (id: string) => {
     try {
       // Buscar dados do hóspede
       const { data: guestData, error: guestError } = await supabase
         .from('guests')
         .select('*')
-        .eq('id', params.id)
+        .eq('id', id)
         .single()
 
       if (guestError) throw guestError
-      setGuest(guestData)
+      setGuest(guestData as any)
 
       // Buscar reservas do hóspede
       const { data: reservationsData, error: reservationsError } = await supabase
@@ -145,14 +148,20 @@ export default function GuestDetailsPage() {
           created_at,
           rooms!inner(room_number, room_type)
         `)
-        .eq('guest_id', params.id)
+        .eq('guest_id', id)
         .order('check_in_date', { ascending: false })
 
       if (reservationsError) throw reservationsError
-      setReservations(reservationsData || [])
+      
+      const formattedReservations = (reservationsData || []).map((res: any) => ({
+        ...res,
+        rooms: Array.isArray(res.rooms) ? res.rooms : (res.rooms ? [res.rooms] : [])
+      }))
+
+      setReservations(formattedReservations as any)
 
       // Calcular estatísticas
-      calculateStats(reservationsData || [])
+      calculateStats(formattedReservations as any)
     } catch (error) {
       toast.error('Erro ao carregar dados do hóspede')
       console.error('Error:', error)

@@ -193,7 +193,7 @@ export async function updateReservationStatus(
     const validationResult = validateStatusTransition(
       currentStatus, 
       newStatus, 
-      validationData,
+      validationData as any,
       consumptions
     );
     
@@ -282,7 +282,7 @@ export async function updateReservationStatus(
           status: roomStatus,
           updated_at: getLocalISOString()
         })
-        .eq('id', currentReservation.room_id);
+        .eq('id', currentReservation.room_id || '');
       
       if (roomError) throw roomError;
       
@@ -318,10 +318,10 @@ export async function updateReservationStatus(
     await supabase
       .from('activity_logs')
       .insert({
-        action_type: `status_change_${newStatus}`,
-        entity_type: 'reservation',
-        entity_id: reservationId,
-        details: logDetails,
+        category: 'reservation',
+        level: 'info',
+        message: `Alteração de status para ${newStatus} na reserva #${reservationId.slice(-8)}`,
+        details: logDetails as any,
         created_at: getLocalISOString()
       });
     
@@ -379,23 +379,30 @@ export async function performCheckIn(reservationId: string): Promise<StatusUpdat
 
 // Função para realizar check-out
 export async function performCheckOut(reservationId: string, consumptions: any[], paymentMethod: string = 'credit_card') {
+  console.log('🏨 [performCheckOut] Iniciando função performCheckOut...', { reservationId, consumptionsCount: consumptions.length, paymentMethod })
   const supabase = createClient();
   
   try {
     // Calcular o valor total (reserva + consumos)
+    console.log('📊 [performCheckOut] Buscando dados da reserva...')
     const { data: reservation, error: reservationError } = await supabase
       .from('reservations')
       .select('total_amount, guest_id, status, room_id, check_in_date, check_out_date')
       .eq('id', reservationId)
       .single();
     
+    console.log('📋 [performCheckOut] Dados da reserva:', { reservation, error: reservationError })
+    
     if (reservationError) throw reservationError;
     
     // Verificar se há consumos pendentes usando a nova função de validação
+    console.log('🔍 [performCheckOut] Iniciando validação de check-out...')
     const reservationWithId = { ...reservation, id: reservationId };
-    const validationResult = validateCheckOut(reservationWithId, consumptions);
+    const validationResult = validateCheckOut(reservationWithId as any, consumptions);
+    console.log('✅ [performCheckOut] Resultado da validação:', validationResult)
     
     if (!validationResult.valid) {
+      console.error('❌ [performCheckOut] Validação falhou:', validationResult.message)
       throw new Error(validationResult.message);
     }
     
@@ -403,11 +410,12 @@ export async function performCheckOut(reservationId: string, consumptions: any[]
     const totalAmount = reservation.total_amount + consumptions.reduce((sum, c) => sum + c.total_amount, 0);
     
     // Calcular a duração da estadia em dias
-    const checkInDate = new Date(reservation.check_in_date);
-    const checkOutDate = new Date(reservation.check_out_date);
+    const checkInDate = new Date(reservation.check_in_date || '');
+    const checkOutDate = new Date(reservation.check_out_date || '');
     const stayDuration = Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24));
     
     // Criar pagamento com informações detalhadas
+    console.log('💳 [performCheckOut] Criando pagamento...', { totalAmount, paymentMethod, stayDuration })
     const { data: paymentData, error: paymentError } = await supabase
       .from('payments')
       .insert({
@@ -431,6 +439,7 @@ export async function performCheckOut(reservationId: string, consumptions: any[]
       })
       .select();
     
+    console.log('💰 [performCheckOut] Resultado da criação do pagamento:', { paymentData, paymentError })
     if (paymentError) throw paymentError;
     
     // Atualizar status dos consumos para 'paid'
@@ -473,10 +482,10 @@ export async function performCheckOut(reservationId: string, consumptions: any[]
     await supabase
       .from('activity_logs')
       .insert({
-        action_type: 'payment_processed',
-        entity_type: 'reservation',
-        entity_id: reservationId,
-        details: paymentDetails,
+        category: 'payment',
+        level: 'info',
+        message: `Pagamento processado para a reserva #${reservationId.slice(-8)}`,
+        details: paymentDetails as any,
         created_at: getLocalISOString()
       });
     
@@ -508,7 +517,15 @@ export async function performCheckOut(reservationId: string, consumptions: any[]
       consumptions_count: consumptions.length
     };
   } catch (error: any) {
-    console.error('Error performing check-out:', error);
+    console.error('🔴 [performCheckOut] ERRO COMPLETO:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      cause: error.cause,
+      reservationId,
+      consumptionsCount: consumptions.length,
+      paymentMethod
+    });
     
     // Log the error with our detailed logging system
     await logSystemError(
@@ -541,7 +558,7 @@ export async function cancelReservation(reservationId: string, reason: string): 
     
     // Usar a nova função de validação para verificar requisitos específicos
     const reservationWithId = { ...reservation, id: reservationId };
-    const validationResult = validateCancellation(reservationWithId);
+    const validationResult = validateCancellation(reservationWithId as any);
     
     if (!validationResult.valid) {
       throw new Error(validationResult.message);
@@ -595,10 +612,10 @@ export async function cancelReservation(reservationId: string, reason: string): 
     await supabase
       .from('activity_logs')
       .insert({
-        action_type: 'reservation_cancelled',
-        entity_type: 'reservation',
-        entity_id: reservationId,
-        details: cancellationDetails,
+        category: 'reservation',
+        level: 'info',
+        message: `Reserva #${reservationId.slice(-8)} cancelada`,
+        details: cancellationDetails as any,
         created_at: getLocalISOString()
       });
     
@@ -692,12 +709,12 @@ export async function finalizeConsumptions(reservationId: string): Promise<Consu
     await supabase
       .from('activity_logs')
       .insert({
-        action_type: 'finalize_consumptions',
-        entity_type: 'reservation',
-        entity_id: reservationId,
+        category: 'consumption',
+        level: 'info',
+        message: `Consumos finalizados para a reserva #${reservationId.slice(-8)}`,
         details: {
           updated_count: pendingConsumptions.length
-        },
+        } as any,
         created_at: getLocalISOString()
       });
     

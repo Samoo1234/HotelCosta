@@ -38,7 +38,7 @@ export default function RoomsPage() {
         .order('room_number')
 
       if (error) throw error
-      setRooms(data || [])
+      setRooms((data || []) as any)
     } catch (error) {
       toast.error('Erro ao carregar quartos')
       console.error('Error:', error)
@@ -117,7 +117,7 @@ export default function RoomsPage() {
             Gerencie todos os quartos do seu hotel
           </p>
         </div>
-        <Link href="/dashboard/rooms/new" className="btn-primary">
+        <Link href="/dashboard/rooms/new" className="btn-primary inline-flex items-center">
           <Plus className="h-5 w-5 mr-2" />
           Novo Quarto
         </Link>
@@ -203,7 +203,7 @@ export default function RoomsPage() {
               : 'Comece adicionando o primeiro quarto do seu hotel'
             }
           </p>
-          <Link href="/dashboard/rooms/new" className="btn-primary">
+          <Link href="/dashboard/rooms/new" className="btn-primary inline-flex items-center">
             <Plus className="h-5 w-5 mr-2" />
             Adicionar Quarto
           </Link>

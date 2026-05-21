@@ -38,12 +38,15 @@ export default function ReservationDetailsPage() {
   const [error, setError] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
 
+  const rawId = params?.id
+  const reservationId = (Array.isArray(rawId) ? rawId[0] : rawId) || ''
+
   useEffect(() => {
-    if (params.id) {
+    if (reservationId) {
       fetchReservation()
       fetchConsumptions()
     }
-  }, [params.id])
+  }, [reservationId])
 
   const fetchReservation = async () => {
     try {
@@ -54,7 +57,7 @@ export default function ReservationDetailsPage() {
           guest:guests(*),
           room:rooms(*)
         `)
-        .eq('id', params.id)
+        .eq('id', reservationId)
         .single()
 
       if (error) throw error
@@ -69,7 +72,7 @@ export default function ReservationDetailsPage() {
   }
 
   const fetchConsumptions = async () => {
-    if (!params.id) return
+    if (!reservationId) return
     
     setConsumptionsLoading(true)
     try {
@@ -79,7 +82,7 @@ export default function ReservationDetailsPage() {
           *,
           product:products(*)
         `)
-        .eq('reservation_id', params.id)
+        .eq('reservation_id', reservationId)
         .order('consumption_date', { ascending: false })
 
       if (error) throw error
@@ -143,18 +146,24 @@ export default function ReservationDetailsPage() {
   }
   
   const handleCheckOut = async (paymentMethod = 'credit_card') => {
+    console.log('🔄 Iniciando processo de check-out...', { reservationId: reservation.id, paymentMethod })
     setActionLoading(true)
     try {
       // Verificar se há consumos pendentes
       const hasUnpaidConsumptions = consumptions.some(c => c.status === 'pending')
+      console.log('📋 Verificação de consumos:', { hasUnpaidConsumptions, consumptionsCount: consumptions.length })
       
       // Se houver consumos pendentes, finalizá-los primeiro
       if (hasUnpaidConsumptions) {
+        console.log('⏳ Finalizando consumos pendentes...')
         await handleFinalizeConsumptions()
+        console.log('✅ Consumos finalizados com sucesso')
       }
       
       // Realizar o check-out com o método de pagamento selecionado
+      console.log('💳 Iniciando processo de check-out no backend...')
       const result = await performCheckOut(reservation.id, consumptions, paymentMethod)
+      console.log('✅ Check-out realizado com sucesso:', result)
       
       // Mostrar feedback visual com a mensagem retornada pela função
       toast.success(result.message || 'Check-out realizado com sucesso!')

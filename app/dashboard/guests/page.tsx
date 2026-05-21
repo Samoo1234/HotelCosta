@@ -65,9 +65,9 @@ export default function GuestsPage() {
             .eq('guest_id', guest.id)
 
           const totalReservations = reservations?.length || 0
-          const totalSpent = reservations?.reduce((sum, res) => sum + res.total_amount, 0) || 0
+          const totalSpent = reservations?.reduce((sum, res) => sum + (res.total_amount || 0), 0) || 0
           const lastStay = reservations && reservations.length > 0 
-            ? reservations.sort((a, b) => new Date(b.check_out_date).getTime() - new Date(a.check_out_date).getTime())[0].check_out_date
+            ? [...reservations].sort((a: any, b: any) => new Date(b.check_out_date || '').getTime() - new Date(a.check_out_date || '').getTime())[0]?.check_out_date || null
             : null
 
           return {
@@ -79,7 +79,7 @@ export default function GuestsPage() {
         })
       )
 
-      setGuests(guestsWithStats)
+      setGuests(guestsWithStats as any)
     } catch (error) {
       toast.error('Erro ao carregar hóspedes')
       console.error('Error:', error)
@@ -149,7 +149,7 @@ export default function GuestsPage() {
             Gerencie todos os hóspedes do seu hotel
           </p>
         </div>
-        <Link href="/dashboard/guests/new" className="btn-primary">
+        <Link href="/dashboard/guests/new" className="btn-primary inline-flex items-center">
           <Plus className="h-5 w-5 mr-2" />
           Novo Hóspede
         </Link>
@@ -236,7 +236,7 @@ export default function GuestsPage() {
               : 'Comece adicionando o primeiro hóspede do seu hotel'
             }
           </p>
-          <Link href="/dashboard/guests/new" className="btn-primary">
+          <Link href="/dashboard/guests/new" className="btn-primary inline-flex items-center">
             <Plus className="h-5 w-5 mr-2" />
             Adicionar Hóspede
           </Link>

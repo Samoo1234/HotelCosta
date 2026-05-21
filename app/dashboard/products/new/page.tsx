@@ -21,7 +21,7 @@ interface ProductFormData {
   price: number
   unit: string
   stock_quantity: number
-  min_stock_level: number
+  min_stock_alert: number
   barcode: string
   active: boolean
 }
@@ -40,7 +40,7 @@ export default function NewProductPage() {
     price: 0,
     unit: 'unidade',
     stock_quantity: 0,
-    min_stock_level: 5,
+    min_stock_alert: 5,
     barcode: '',
     active: true
   })
@@ -58,7 +58,7 @@ export default function NewProductPage() {
         .order('display_order')
 
       if (error) throw error
-      setCategories(data || [])
+      setCategories((data || []) as any)
     } catch (error) {
       toast.error('Erro ao carregar categorias')
       console.error('Error:', error)
@@ -90,7 +90,7 @@ export default function NewProductPage() {
       return
     }
 
-    if (formData.min_stock_level < 0) {
+    if (formData.min_stock_alert < 0) {
       toast.error('Estoque mínimo não pode ser negativo')
       return
     }
@@ -105,7 +105,7 @@ export default function NewProductPage() {
         price: formData.price,
         unit: formData.unit,
         stock_quantity: formData.stock_quantity,
-        min_stock_level: formData.min_stock_level,
+        min_stock_alert: formData.min_stock_alert,
         barcode: formData.barcode.trim() || null,
         active: formData.active
       }
@@ -347,8 +347,8 @@ export default function NewProductPage() {
                   type="number"
                   min="0"
                   step="1"
-                  value={formData.min_stock_level}
-                  onChange={(e) => setFormData(prev => ({ ...prev, min_stock_level: parseInt(e.target.value) || 0 }))}
+                  value={formData.min_stock_alert}
+                  onChange={(e) => setFormData(prev => ({ ...prev, min_stock_alert: parseInt(e.target.value) || 0 }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   required
                 />
@@ -358,7 +358,7 @@ export default function NewProductPage() {
               </div>
             </div>
 
-            {formData.stock_quantity > 0 && formData.stock_quantity <= formData.min_stock_level && (
+            {formData.stock_quantity > 0 && formData.stock_quantity <= formData.min_stock_alert && (
               <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <p className="text-sm text-yellow-700">
                   ⚠️ Atenção: A quantidade inicial está no nível de estoque mínimo ou abaixo.
@@ -405,7 +405,7 @@ export default function NewProductPage() {
                   </div>
                   <div className="flex items-center space-x-2 mt-2">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      formData.stock_quantity > formData.min_stock_level
+                      formData.stock_quantity > formData.min_stock_alert
                         ? 'bg-green-100 text-green-800'
                         : formData.stock_quantity > 0
                         ? 'bg-yellow-100 text-yellow-800'

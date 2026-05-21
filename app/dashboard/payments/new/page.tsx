@@ -85,7 +85,7 @@ export default function NewPaymentPage() {
         .order('check_in_date', { ascending: true })
 
       if (error) throw error
-      setReservations(data || [])
+      setReservations((data || []) as any)
     } catch (error) {
       toast.error('Erro ao carregar reservas')
       console.error('Error:', error)

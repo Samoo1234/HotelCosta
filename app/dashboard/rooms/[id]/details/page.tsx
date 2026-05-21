@@ -86,12 +86,15 @@ export default function RoomDetailsPage() {
     occupancyRate: 0
   })
 
+  const rawId = params?.id
+  const roomId = (Array.isArray(rawId) ? rawId[0] : rawId) || ''
+
   useEffect(() => {
-    if (params.id) {
-      fetchRoomData(params.id as string)
+    if (roomId) {
+      fetchRoomData(roomId)
       loadHotelSettings()
     }
-  }, [params.id])
+  }, [roomId])
 
   const fetchRoomData = async (roomId: string) => {
     try {
@@ -103,7 +106,7 @@ export default function RoomDetailsPage() {
         .single()
 
       if (roomError) throw roomError
-      setRoom(roomData)
+      setRoom(roomData as any)
 
       // Fetch reservations with guest info
       const { data: reservationsData, error: reservationsError } = await supabase
@@ -131,14 +134,14 @@ export default function RoomDetailsPage() {
         guest: Array.isArray(res.guests) ? res.guests[0] : res.guests
       })) || []
       
-      setReservations(formattedReservations)
+      setReservations(formattedReservations as any)
 
       // Calculate stats
       if (reservationsData) {
         const totalReservations = reservationsData.length
         const totalRevenue = reservationsData.reduce((sum, res) => sum + res.total_amount, 0)
         const totalDays = reservationsData.reduce((sum, res) => {
-          return sum + calculateNights(res.check_in_date, res.check_out_date)
+          return sum + calculateNights(res.check_in_date || '', res.check_out_date || '')
         }, 0)
         const averageStay = totalReservations > 0 ? totalDays / totalReservations : 0
         
@@ -146,10 +149,10 @@ export default function RoomDetailsPage() {
         const thirtyDaysAgo = new Date()
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
         const recentReservations = reservationsData.filter(res => 
-          new Date(res.check_in_date) >= thirtyDaysAgo
+          new Date(res.check_in_date || '') >= thirtyDaysAgo
         )
         const occupiedDays = recentReservations.reduce((sum, res) => {
-          return sum + calculateNights(res.check_in_date, res.check_out_date)
+          return sum + calculateNights(res.check_in_date || '', res.check_out_date || '')
         }, 0)
         const occupancyRate = (occupiedDays / 30) * 100
 

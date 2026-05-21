@@ -86,10 +86,10 @@ export default function ReportsPage() {
         supabase.from('rooms').select('*')
       ])
 
-      const reservations = reservationsData.data || []
-      const payments = paymentsData.data || []
-      const guests = guestsData.data || []
-      const rooms = roomsData.data || []
+      const reservations = (reservationsData.data || []) as any[]
+      const payments = (paymentsData.data || []) as any[]
+      const guests = (guestsData.data || []) as any[]
+      const rooms = (roomsData.data || []) as any[]
 
       // Calculate current period data
       const currentReservations = reservations.filter(r => 

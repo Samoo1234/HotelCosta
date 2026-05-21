@@ -18,7 +18,12 @@ export function formatDate(date: string | Date, timezone: string = 'America/Sao_
     if (date instanceof Date) {
       dateObj = date
     } else {
-      dateObj = new Date(date)
+      // Se for apenas data (AAAA-MM-DD), adiciona a hora para evitar conversão de fuso horário UTC indesejada
+      let dateStr = date
+      if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        dateStr = `${dateStr}T00:00:00`
+      }
+      dateObj = new Date(dateStr)
     }
     
     // Check if date is valid
@@ -126,9 +131,44 @@ export function createTimezoneAwareDate(dateStr: string, timeStr: string, timezo
 
 export function getTimezoneOffset(timezone: string): number {
   const now = new Date()
-  const utc = new Date(now.getTime() + (now.getTimezoneOffset() * 60000))
-  const target = new Date(utc.toLocaleString('en-US', { timeZone: timezone }))
-  return target.getTime() - utc.getTime()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hour12: false
+  })
+  
+  const parts = formatter.formatToParts(now)
+  const partValues: Record<string, number> = {}
+  for (const part of parts) {
+    if (part.type !== 'literal') {
+      partValues[part.type] = parseInt(part.value, 10)
+    }
+  }
+  
+  const targetUtc = Date.UTC(
+    partValues.year,
+    partValues.month - 1,
+    partValues.day,
+    partValues.hour === 24 ? 0 : partValues.hour,
+    partValues.minute,
+    partValues.second
+  )
+  
+  const sourceUtc = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+    now.getUTCHours(),
+    now.getUTCMinutes(),
+    now.getUTCSeconds()
+  )
+  
+  return targetUtc - sourceUtc
 }
 
 export function generateReservationCode(): string {

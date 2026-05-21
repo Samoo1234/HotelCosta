@@ -9,7 +9,7 @@ import { formatCurrency } from '@/lib/utils'
 
 interface Guest {
   id: string
-  client_type: 'individual' | 'company'
+  client_type: string | null
   first_name: string | null
   last_name: string | null
   company_name: string | null
@@ -27,39 +27,39 @@ interface Product {
   id: string
   name: string
   price: number
-  unit: string
-  stock_quantity: number
+  unit: string | null
+  stock_quantity: number | null
   category?: {
     name: string
-  }
+  } | null
 }
 
 interface Reservation {
   id: string
-  guest_id: string
-  room_id: string
+  guest_id: string | null
+  room_id: string | null
   check_in_date: string
-  check_out_date: string
-  status: string
-  guest: Guest
-  room: Room
+  check_out_date: string | null
+  status: string | null
+  guest: Guest | null
+  room: Room | null
 }
 
 interface RoomConsumption {
   id: string
-  reservation_id: string
-  room_id: string
-  product_id: string
+  reservation_id: string | null
+  room_id: string | null
+  product_id: string | null
   quantity: number
   unit_price: number
   total_amount: number
-  consumption_date: string
-  payment_responsibility: 'guest' | 'company'
-  status: 'pending' | 'billed' | 'paid' | 'cancelled'
+  consumption_date: string | null
+  payment_responsibility: string | null
+  status: string | null
   notes: string | null
   registered_by: string | null
-  reservation: Reservation
-  product: Product
+  reservation: Reservation | null
+  product: Product | null
 }
 
 export default function ConsumptionsPage() {
@@ -141,13 +141,14 @@ export default function ConsumptionsPage() {
     }
   }
 
-  const getGuestName = (guest: Guest) => {
+  const getGuestName = (guest: Guest | null | undefined) => {
+    if (!guest) return 'Hóspede indefinido'
     return guest.client_type === 'individual'
-      ? `${guest.first_name} ${guest.last_name}`
+      ? `${guest.first_name || ''} ${guest.last_name || ''}`.trim() || 'Nome não informado'
       : guest.trade_name || guest.company_name || 'Empresa'
   }
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string | null | undefined) => {
     const statusConfig = {
       pending: { label: 'Pendente', color: 'bg-yellow-100 text-yellow-800' },
       billed: { label: 'Faturado', color: 'bg-blue-100 text-blue-800' },
@@ -155,7 +156,7 @@ export default function ConsumptionsPage() {
       cancelled: { label: 'Cancelado', color: 'bg-red-100 text-red-800' }
     }
     
-    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pending
+    const config = statusConfig[(status || 'pending') as keyof typeof statusConfig] || statusConfig.pending
     
     return (
       <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${config.color}`}>
@@ -164,7 +165,7 @@ export default function ConsumptionsPage() {
     )
   }
 
-  const getPaymentResponsibilityBadge = (responsibility: string, clientType: string) => {
+  const getPaymentResponsibilityBadge = (responsibility: string | null | undefined, clientType: string | null | undefined) => {
     if (clientType === 'individual') {
       return (
         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -190,17 +191,17 @@ export default function ConsumptionsPage() {
   }
 
   const filteredConsumptions = consumptions.filter(consumption => {
-    const guestName = getGuestName(consumption.reservation.guest)
+    const guestName = getGuestName(consumption.reservation?.guest)
     const matchesSearch = searchTerm === '' || 
       guestName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      consumption.reservation.room.room_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      consumption.product.name.toLowerCase().includes(searchTerm.toLowerCase())
+      (consumption.reservation?.room?.room_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (consumption.product?.name || '').toLowerCase().includes(searchTerm.toLowerCase())
 
     const matchesStatus = statusFilter === 'all' || consumption.status === statusFilter
     const matchesPayment = paymentFilter === 'all' || consumption.payment_responsibility === paymentFilter
 
     let matchesDate = true
-    if (dateFilter !== 'all') {
+    if (dateFilter !== 'all' && consumption.consumption_date) {
       const today = new Date()
       const consumptionDate = new Date(consumption.consumption_date)
       
@@ -412,34 +413,34 @@ export default function ConsumptionsPage() {
                 <tr key={consumption.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">
-                      {new Date(consumption.consumption_date).toLocaleDateString('pt-BR')}
+                      {consumption.consumption_date ? new Date(consumption.consumption_date).toLocaleDateString('pt-BR') : 'N/A'}
                     </div>
                     <div className="text-xs text-gray-500">
-                      {new Date(consumption.consumption_date).toLocaleTimeString('pt-BR', {
+                      {consumption.consumption_date ? new Date(consumption.consumption_date).toLocaleTimeString('pt-BR', {
                         hour: '2-digit',
                         minute: '2-digit'
-                      })}
+                      }) : ''}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900">
-                      Quarto {consumption.reservation.room.room_number}
+                      Quarto {consumption.reservation?.room?.room_number || 'N/A'}
                     </div>
                     <div className="text-sm text-gray-500">
-                      {getGuestName(consumption.reservation.guest)}
+                      {getGuestName(consumption.reservation?.guest)}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">
-                      {consumption.product.name}
+                      {consumption.product?.name || 'N/A'}
                     </div>
                     <div className="text-xs text-gray-500">
-                      {consumption.product.category?.name}
+                      {consumption.product?.category?.name || 'Sem categoria'}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">
-                      {consumption.quantity} {consumption.product.unit}
+                      {consumption.quantity} {consumption.product?.unit || ''}
                     </div>
                     <div className="text-xs text-gray-500">
                       {formatCurrency(consumption.unit_price)} cada
@@ -453,7 +454,7 @@ export default function ConsumptionsPage() {
                   <td className="px-6 py-4 whitespace-nowrap">
                     {getPaymentResponsibilityBadge(
                       consumption.payment_responsibility,
-                      consumption.reservation.guest.client_type
+                      consumption.reservation?.guest?.client_type
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">

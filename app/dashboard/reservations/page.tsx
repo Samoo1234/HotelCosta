@@ -98,7 +98,7 @@ export default function ReservationsPage() {
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      setReservations(data || [])
+      setReservations((data || []) as any)
     } catch (error) {
       toast.error('Erro ao carregar reservas')
       console.error('Error:', error)
@@ -567,7 +567,7 @@ export default function ReservationsPage() {
                 : 'Tente ajustar os filtros de busca'
               }
             </p>
-            <Link href="/dashboard/reservations/new" className="btn-primary">
+            <Link href="/dashboard/reservations/new" className="btn-primary inline-flex items-center">
               <Plus className="h-4 w-4 mr-2" />
               Nova Reserva
             </Link>

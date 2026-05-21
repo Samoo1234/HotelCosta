@@ -73,29 +73,32 @@ export default function EditRoomPage() {
     description: ''
   })
 
-  useEffect(() => {
-    if (params.id) {
-      fetchRoom(params.id as string)
-    }
-  }, [params.id])
+  const rawId = params?.id
+  const roomId = (Array.isArray(rawId) ? rawId[0] : rawId) || ''
 
-  const fetchRoom = async (roomId: string) => {
+  useEffect(() => {
+    if (roomId) {
+      fetchRoom(roomId)
+    }
+  }, [roomId])
+
+  const fetchRoom = async (id: string) => {
     try {
       const { data, error } = await supabase
         .from('rooms')
         .select('*')
-        .eq('id', roomId)
+        .eq('id', id)
         .single()
 
       if (error) throw error
       
-      setRoom(data)
+      setRoom(data as any)
       setFormData({
         room_number: data.room_number,
         room_type: data.room_type,
         capacity: data.capacity,
         price_per_night: data.price_per_night,
-        status: data.status,
+        status: (data.status || 'available') as any,
         amenities: data.amenities || [],
         description: data.description || ''
       })
@@ -136,7 +139,7 @@ export default function EditRoomPage() {
           .from('rooms')
           .select('id')
           .eq('room_number', formData.room_number)
-          .neq('id', params.id)
+          .neq('id', roomId)
           .single()
 
         if (existingRoom) {
@@ -157,7 +160,7 @@ export default function EditRoomPage() {
           description: formData.description || null,
           updated_at: getLocalISOString()
         })
-        .eq('id', params.id)
+        .eq('id', roomId)
 
       if (error) throw error
 
@@ -182,7 +185,7 @@ export default function EditRoomPage() {
       const { error } = await supabase
         .from('rooms')
         .delete()
-        .eq('id', params.id)
+        .eq('id', roomId)
 
       if (error) throw error
 

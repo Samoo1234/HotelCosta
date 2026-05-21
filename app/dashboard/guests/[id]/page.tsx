@@ -92,23 +92,26 @@ export default function EditGuestPage() {
   const [stats, setStats] = useState<GuestStats | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
+  const rawId = params?.id
+  const guestId = (Array.isArray(rawId) ? rawId[0] : rawId) || ''
+
   useEffect(() => {
-    if (params.id) {
+    if (guestId) {
       fetchGuest()
       fetchGuestStats()
     }
-  }, [params.id])
+  }, [guestId])
 
   const fetchGuest = async () => {
     try {
       const { data, error } = await supabase
         .from('guests')
         .select('*')
-        .eq('id', params.id)
+        .eq('id', guestId)
         .single()
 
       if (error) throw error
-      setGuest(data)
+      setGuest(data as any)
     } catch (error) {
       toast.error('Erro ao carregar hóspede')
       console.error('Error:', error)
@@ -130,7 +133,7 @@ export default function EditGuestPage() {
           total_amount,
           rooms!inner(room_type)
         `)
-        .eq('guest_id', params.id)
+        .eq('guest_id', guestId)
 
       if (error) throw error
 
@@ -143,22 +146,23 @@ export default function EditGuestPage() {
 
       if (reservations && reservations.length > 0) {
         // Última estadia
-        const sortedReservations = reservations.sort((a, b) => 
-          new Date(b.check_out_date).getTime() - new Date(a.check_out_date).getTime()
+        const sortedReservations = [...reservations].sort((a: any, b: any) => 
+          new Date(b.check_out_date || '').getTime() - new Date(a.check_out_date || '').getTime()
         )
-        lastStay = sortedReservations[0].check_out_date
+        lastStay = sortedReservations[0]?.check_out_date || null
 
         // Duração média da estadia
-        const totalDays = reservations.reduce((sum, res) => {
+        const totalDays = reservations.reduce((sum, res: any) => {
           const checkIn = new Date(res.check_in_date)
-          const checkOut = new Date(res.check_out_date)
+          const checkOut = new Date(res.check_out_date || res.check_in_date)
           return sum + Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24))
         }, 0)
         averageStayDuration = totalDays / reservations.length
 
         // Tipo de quarto favorito
-        const roomTypeCounts = reservations.reduce((acc: Record<string, number>, res) => {
-          const roomType = res.rooms?.[0]?.room_type || 'Desconhecido'
+        const roomTypeCounts = reservations.reduce((acc: Record<string, number>, res: any) => {
+          const roomsArr = Array.isArray(res.rooms) ? res.rooms : (res.rooms ? [res.rooms] : [])
+          const roomType = roomsArr[0]?.room_type || 'Desconhecido'
           acc[roomType] = (acc[roomType] || 0) + 1
           return acc
         }, {})

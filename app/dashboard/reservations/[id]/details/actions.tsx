@@ -421,8 +421,8 @@ export async function performCheckOut(reservationId: string, consumptions: any[]
     
     // Recalcular precificação considerando check-out tardio
     const pricing = calculateCheckoutPricing(
-      reservation.check_in_date,
-      reservation.check_out_date,
+      reservation.check_in_date || '',
+      reservation.check_out_date || '',
       checkOutTime,
       pricePerNight,
       reservation.total_amount

@@ -22,14 +22,14 @@ import { cn } from '@/lib/utils'
 
 const navigation = [
   {
-    name: 'Dashboard',
-    href: '/dashboard',
-    icon: LayoutDashboard,
-  },
-  {
     name: 'Quartos',
     href: '/dashboard/rooms',
     icon: Bed,
+  },
+  {
+    name: 'Dashboard',
+    href: '/dashboard',
+    icon: LayoutDashboard,
   },
   {
     name: 'Hóspedes',

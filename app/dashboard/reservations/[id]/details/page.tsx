@@ -22,6 +22,7 @@ import {
   validateStatusTransitionRequirements
 } from './actions'
 
+import { calculateCheckoutPricing } from '@/lib/checkout-utils'
 import ReservationActionsWrapper from './reservation-actions-wrapper'
 
 export default function ReservationDetailsPage() {
@@ -37,6 +38,7 @@ export default function ReservationDetailsPage() {
   const [consumptionsLoading, setConsumptionsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
+  const [hotelSettings, setHotelSettings] = useState<{ check_in_time: string, check_out_time: string } | null>(null)
 
   const rawId = params?.id
   const reservationId = (Array.isArray(rawId) ? rawId[0] : rawId) || ''
@@ -45,8 +47,30 @@ export default function ReservationDetailsPage() {
     if (reservationId) {
       fetchReservation()
       fetchConsumptions()
+      fetchHotelSettings()
     }
   }, [reservationId])
+
+  const fetchHotelSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('hotels')
+        .select('check_in_time, check_out_time')
+        .limit(1)
+        .single()
+      
+      if (error) throw error
+      if (data) {
+        setHotelSettings({
+          check_in_time: data.check_in_time || '14:00',
+          check_out_time: data.check_out_time || '12:00'
+        })
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar configurações do hotel, usando padrões:', err)
+      setHotelSettings({ check_in_time: '14:00', check_out_time: '12:00' })
+    }
+  }
 
   const fetchReservation = async () => {
     try {
@@ -393,9 +417,32 @@ export default function ReservationDetailsPage() {
   let daysUntilCheckout = null;
   let isCheckoutSoon = false;
   
-  if (reservation.check_out_date) {
-    daysUntilCheckout = Math.ceil((new Date(reservation.check_out_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-    isCheckoutSoon = daysUntilCheckout <= 1 && daysUntilCheckout >= 0 && reservation.status === 'checked_in';
+  // Calcular precificação e alertas para check-out tardio
+  const pricing = reservation && hotelSettings && reservation.status === 'checked_in' && reservation.check_out_date
+    ? calculateCheckoutPricing(
+        reservation.check_in_date,
+        reservation.check_out_date,
+        hotelSettings.check_out_time,
+        reservation.room?.price_per_night || 0,
+        reservation.total_amount
+      )
+    : null;
+
+  // Determinar se está no período de tolerância gratuita (atrasado em relação ao check_out_time, mas <= 2 horas de atraso)
+  let isInGracePeriod = false;
+  let gracePeriodLimitStr = '';
+  if (reservation && hotelSettings && reservation.status === 'checked_in' && reservation.check_out_date) {
+    const localIso = getLocalISOString();
+    const now = new Date(localIso);
+    const scheduledCheckOutDate = new Date(reservation.check_out_date + 'T00:00:00');
+    const timeClean = hotelSettings.check_out_time ? hotelSettings.check_out_time.slice(0, 5) : '12:00';
+    const [hours, minutes] = timeClean.split(':').map(Number);
+    const scheduledCheckOutDateTime = new Date(scheduledCheckOutDate);
+    scheduledCheckOutDateTime.setHours(hours, minutes, 0, 0);
+    const gracePeriodDateTime = new Date(scheduledCheckOutDateTime.getTime() + 2 * 60 * 60 * 1000);
+    
+    isInGracePeriod = now > scheduledCheckOutDateTime && now <= gracePeriodDateTime;
+    gracePeriodLimitStr = gracePeriodDateTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   }
 
   return (
@@ -498,7 +545,7 @@ export default function ReservationDetailsPage() {
             <div className="ml-3">
               <p className="text-sm font-medium text-gray-600">Total</p>
               <p className="text-lg font-bold text-gray-900">
-                R$ {reservation.total_amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                R$ {(pricing?.isLate ? pricing.recalculatedStayAmount : reservation.total_amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
           </div>
@@ -506,7 +553,61 @@ export default function ReservationDetailsPage() {
       </div>
       
       {/* Next Action and Alerts */}
-      {isCheckoutSoon && reservation.check_out_date && (
+      {pricing && pricing.isLate && (
+        pricing.hoursExceeded <= 4 ? (
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 flex items-start">
+            <AlertTriangle className="h-5 w-5 text-orange-600 mr-2 mt-0.5" />
+            <div>
+              <p className="text-orange-800 font-medium">Check-out em Atraso (Tolerância Excedida)</p>
+              <p className="text-orange-700 text-sm mt-1">
+                O horário limite de check-out com tolerância de 2 horas foi ultrapassado por <strong>{pricing.hoursExceeded} hora(s)</strong>. 
+                Será cobrada uma taxa adicional de <strong>R$ {pricing.lateCheckoutFee.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> (diária proporcional fracionada de 1/12 por hora).
+                {hasUnpaidConsumptions && ' Existem consumos pendentes que precisam ser finalizados.'}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start">
+            <AlertTriangle className="h-5 w-5 text-red-600 mr-2 mt-0.5" />
+            <div>
+              <p className="text-red-800 font-medium">Check-out Tardio (Cobrança de Diária Cheia)</p>
+              <p className="text-red-700 text-sm mt-1">
+                O check-out ultrapassou o limite máximo de 4 horas extras além da tolerância. 
+                Será cobrada <strong>1 diária cheia adicional</strong> no valor de <strong>R$ {pricing.pricePerNight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>.
+                {hasUnpaidConsumptions && ' Existem consumos pendentes que precisam ser finalizados.'}
+              </p>
+            </div>
+          </div>
+        )
+      )}
+
+      {isInGracePeriod && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start">
+          <Clock className="h-5 w-5 text-yellow-600 mr-2 mt-0.5" />
+          <div>
+            <p className="text-yellow-800 font-medium">Check-out em Atraso (Período de Tolerância)</p>
+            <p className="text-yellow-700 text-sm mt-1">
+              O horário limite de check-out foi excedido, mas o hóspede está dentro da tolerância gratuita de 2 horas (até as {gracePeriodLimitStr}). Nenhuma taxa extra será cobrada se o check-out for realizado agora.
+              {hasUnpaidConsumptions && ' Existem consumos pendentes que precisam ser finalizados.'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {pricing && pricing.isImminent && !isInGracePeriod && !pricing.isLate && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start">
+          <Clock className="h-5 w-5 text-yellow-600 mr-2 mt-0.5" />
+          <div>
+            <p className="text-yellow-800 font-medium">Check-out Iminente</p>
+            <p className="text-yellow-700 text-sm mt-1">
+              O check-out está programado para hoje. Faltam aproximadamente <strong>{Math.ceil(pricing.hoursUntilCheckout)} hora(s)</strong> para o horário limite ({hotelSettings?.check_out_time?.slice(0, 5) || '12:00'}).
+              {hasUnpaidConsumptions && ' Existem consumos pendentes que precisam ser finalizados.'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {!pricing?.isLate && !pricing?.isImminent && !isInGracePeriod && isCheckoutSoon && reservation.check_out_date && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start">
           <Clock className="h-5 w-5 text-yellow-600 mr-2 mt-0.5" />
           <div>
@@ -520,7 +621,7 @@ export default function ReservationDetailsPage() {
           </div>
         </div>
       )}
-      
+
       {/* Alert for open checkout */}
       {!reservation.check_out_date && reservation.status === 'checked_in' && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start">
@@ -730,6 +831,7 @@ export default function ReservationDetailsPage() {
         onClose={() => setShowCheckOutModal(false)}
         onConfirm={handleCheckOut}
         onFinalizeConsumptions={handleFinalizeConsumptions}
+        hotelSettings={hotelSettings}
       />
       
       <CancelReservationModal

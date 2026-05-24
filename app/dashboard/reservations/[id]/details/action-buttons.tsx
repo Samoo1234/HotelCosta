@@ -271,9 +271,7 @@ export default function ReservationActionButtons({
 
   // Handle no-show status (direct update without modal)
   const handleNoShow = async () => {
-    await handleDirectStatusUpdate('no_show', {
-      no_show_reason: 'Hóspede não compareceu na data prevista'
-    });
+    await handleDirectStatusUpdate('no_show', {});
   };
 
   return (

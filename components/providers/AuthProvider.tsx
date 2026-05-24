@@ -48,7 +48,7 @@ export default function AuthProvider({ children, session: initialSession }: Auth
       setLoading(false)
 
       if (event === 'SIGNED_IN') {
-        router.push('/dashboard')
+        router.push('/dashboard/rooms')
       }
       
       if (event === 'SIGNED_OUT') {

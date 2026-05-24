@@ -32,7 +32,7 @@ export default function LoginPage() {
 
       if (data.user) {
         toast.success('Login realizado com sucesso!')
-        router.push('/dashboard')
+        router.push('/dashboard/rooms')
       }
     } catch (error) {
       toast.error('Erro inesperado. Tente novamente.')

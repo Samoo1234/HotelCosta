@@ -20,6 +20,8 @@ import {
   LogCategory
 } from '@/lib/logging';
 
+import { calculateCheckoutPricing } from '@/lib/checkout-utils';
+
 // Definição dos tipos de status de reserva
 export type ReservationStatus = 'confirmed' | 'checked_in' | 'checked_out' | 'cancelled' | 'no_show';
 
@@ -387,7 +389,7 @@ export async function performCheckOut(reservationId: string, consumptions: any[]
     console.log('📊 [performCheckOut] Buscando dados da reserva...')
     const { data: reservation, error: reservationError } = await supabase
       .from('reservations')
-      .select('total_amount, guest_id, status, room_id, check_in_date, check_out_date')
+      .select('total_amount, guest_id, status, room_id, check_in_date, check_out_date, room:rooms!inner(price_per_night)')
       .eq('id', reservationId)
       .single();
     
@@ -405,37 +407,43 @@ export async function performCheckOut(reservationId: string, consumptions: any[]
       console.error('❌ [performCheckOut] Validação falhou:', validationResult.message)
       throw new Error(validationResult.message);
     }
+
+    // Buscar a hora limite de check-out do hotel
+    const { data: hotelData } = await supabase
+      .from('hotels')
+      .select('check_out_time')
+      .limit(1)
+      .single();
     
-    // Calcular o valor total (estadia + consumos)
-    const totalAmount = reservation.total_amount + consumptions.reduce((sum, c) => sum + c.total_amount, 0);
+    const checkOutTime = hotelData?.check_out_time || '12:00';
+    const room = Array.isArray(reservation.room) ? reservation.room[0] : reservation.room;
+    const pricePerNight = room?.price_per_night ? parseFloat(room.price_per_night) : 0;
     
-    // Calcular a duração da estadia em dias
-    const checkInDate = new Date(reservation.check_in_date || '');
-    const checkOutDate = new Date(reservation.check_out_date || '');
-    const stayDuration = Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24));
+    // Recalcular precificação considerando check-out tardio
+    const pricing = calculateCheckoutPricing(
+      reservation.check_in_date,
+      reservation.check_out_date,
+      checkOutTime,
+      pricePerNight,
+      reservation.total_amount
+    );
+    
+    const stayAmount = pricing.isLate ? pricing.recalculatedStayAmount : reservation.total_amount;
+    const stayDuration = pricing.isLate ? pricing.currentNights : Math.ceil((new Date(reservation.check_out_date || '').getTime() - new Date(reservation.check_in_date || '').getTime()) / (1000 * 60 * 60 * 24));
+    
+    // Calcular o valor total (estadia recalculada + consumos)
+    const totalAmount = stayAmount + consumptions.reduce((sum, c) => sum + c.total_amount, 0);
     
     // Criar pagamento com informações detalhadas
-    console.log('💳 [performCheckOut] Criando pagamento...', { totalAmount, paymentMethod, stayDuration })
+    console.log('💳 [performCheckOut] Criando pagamento...', { totalAmount, paymentMethod, stayDuration, stayAmount })
     const { data: paymentData, error: paymentError } = await supabase
       .from('payments')
       .insert({
         reservation_id: reservationId,
-        guest_id: reservation.guest_id,
         amount: totalAmount,
         payment_method: paymentMethod,
         payment_status: 'completed',
-        payment_date: getLocalISOString(),
-        description: `Pagamento de check-out - Reserva #${reservationId.slice(-8)}`,
-        details: {
-          stay_amount: reservation.total_amount,
-          consumption_amount: consumptions.reduce((sum, c) => sum + c.total_amount, 0),
-          stay_duration: stayDuration,
-          payment_method_details: {
-            type: paymentMethod,
-            processed_at: getLocalISOString()
-          },
-          consumptions_count: consumptions.length
-        }
+        payment_date: getLocalISOString()
       })
       .select();
     
@@ -448,7 +456,6 @@ export async function performCheckOut(reservationId: string, consumptions: any[]
         .from('room_consumptions')
         .update({ 
           status: 'paid',
-          payment_id: paymentData[0].id,
           updated_at: getLocalISOString()
         })
         .eq('reservation_id', reservationId);
@@ -461,12 +468,17 @@ export async function performCheckOut(reservationId: string, consumptions: any[]
       payment_id: paymentData[0].id,
       payment_method: paymentMethod,
       total_amount: totalAmount,
-      stay_amount: reservation.total_amount,
+      stay_amount: stayAmount,
       consumption_amount: consumptions.reduce((sum, c) => sum + c.total_amount, 0),
       stay_duration: stayDuration,
       check_in_date: reservation.check_in_date,
       check_out_date: reservation.check_out_date,
-      actual_check_out_date: getLocalISOString()
+      actual_check_out_date: getLocalISOString(),
+      late_checkout: pricing.isLate ? {
+        hours_exceeded: pricing.hoursExceeded,
+        late_fee: pricing.lateCheckoutFee,
+        extra_nights: pricing.extraNights
+      } : undefined
     };
     
     // Registrar log no sistema de logs detalhados
@@ -489,18 +501,13 @@ export async function performCheckOut(reservationId: string, consumptions: any[]
         created_at: getLocalISOString()
       });
     
-    // Atualizar status da reserva com informações adicionais de pagamento
+    // Atualizar status da reserva com informações adicionais de pagamento e o valor recalculado
     // Usar a função aprimorada que já inclui validações e logs detalhados
     const statusResult = await updateReservationStatus(
       reservationId, 
       'checked_out', 
       {
-        payment_status: 'paid',
-        payment_id: paymentData[0].id,
-        payment_method: paymentMethod,
-        payment_amount: totalAmount,
-        actual_check_out_date: getLocalISOString(),
-        stay_duration: stayDuration
+        total_amount: stayAmount // Atualiza o total_amount da reserva no banco!
       },
       consumptions
     );
@@ -512,7 +519,7 @@ export async function performCheckOut(reservationId: string, consumptions: any[]
       total_amount: totalAmount,
       payment_method: paymentMethod,
       stay_duration: stayDuration,
-      stay_amount: reservation.total_amount,
+      stay_amount: stayAmount,
       consumption_amount: consumptions.reduce((sum, c) => sum + c.total_amount, 0),
       consumptions_count: consumptions.length
     };

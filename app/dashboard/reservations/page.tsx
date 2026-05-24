@@ -79,12 +79,35 @@ export default function ReservationsPage() {
   const [cancelModalOpen, setCancelModalOpen] = useState(false)
   const [hasConsumptions, setHasConsumptions] = useState(false)
   const [consumptions, setConsumptions] = useState<any[]>([])
+  const [hotelSettings, setHotelSettings] = useState<{ check_in_time: string, check_out_time: string } | null>(null)
   
   const supabase = createClient()
 
   useEffect(() => {
     fetchReservations()
+    fetchHotelSettings()
   }, [])
+
+  const fetchHotelSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('hotels')
+        .select('check_in_time, check_out_time')
+        .limit(1)
+        .single()
+      
+      if (error) throw error
+      if (data) {
+        setHotelSettings({
+          check_in_time: data.check_in_time || '14:00',
+          check_out_time: data.check_out_time || '12:00'
+        })
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar configurações do hotel, usando padrões:', err)
+      setHotelSettings({ check_in_time: '14:00', check_out_time: '12:00' })
+    }
+  }
 
   const fetchReservations = async () => {
     try {
@@ -780,6 +803,7 @@ export default function ReservationsPage() {
             onClose={() => setCheckOutModalOpen(false)}
             onConfirm={handleCheckOut}
             onFinalizeConsumptions={handleFinalizeConsumptions}
+            hotelSettings={hotelSettings}
           />
           
           {/* Cancel Modal */}

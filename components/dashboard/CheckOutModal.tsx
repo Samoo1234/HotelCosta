@@ -7,6 +7,7 @@ import { LogOut, AlertTriangle, CheckCircle, CreditCard, DollarSign, Smartphone,
 import { formatDate } from '@/lib/utils';
 import ErrorNotification from './ErrorNotification';
 import { showErrorToast, showSuccessToast, showWarningToast } from './DetailedToast';
+import { calculateCheckoutPricing } from '@/lib/checkout-utils';
 
 interface Guest {
   id: string;
@@ -21,6 +22,7 @@ interface Room {
   id: string;
   room_number: string;
   room_type: string;
+  price_per_night: number;
 }
 
 interface Reservation {
@@ -60,6 +62,7 @@ interface CheckOutModalProps {
   onClose: () => void;
   onConfirm: () => Promise<void>;
   onFinalizeConsumptions: () => Promise<void>;
+  hotelSettings?: { check_in_time: string, check_out_time: string } | null;
 }
 
 export default function CheckOutModal({
@@ -68,13 +71,28 @@ export default function CheckOutModal({
   isOpen,
   onClose,
   onConfirm,
-  onFinalizeConsumptions
+  onFinalizeConsumptions,
+  hotelSettings
 }: CheckOutModalProps) {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState('credit_card');
   const [confirmCheckout, setConfirmCheckout] = useState(false);
   const hasUnpaidConsumptions = consumptions.some(c => c.status === 'pending');
+  
+  // Obter precificação e recálculo dinâmico por check-out tardio
+  const pricing = reservation && hotelSettings && reservation.check_out_date
+    ? calculateCheckoutPricing(
+        reservation.check_in_date,
+        reservation.check_out_date,
+        hotelSettings.check_out_time,
+        reservation.room?.price_per_night || 0,
+        reservation.total_amount
+      )
+    : null;
+
+  const stayAmount = pricing?.isLate ? pricing.recalculatedStayAmount : reservation.total_amount;
+  const totalAmount = stayAmount + consumptions.reduce((sum, c) => sum + c.total_amount, 0);
   
   const [validationError, setValidationError] = useState<string | null>(null);
   
@@ -105,9 +123,6 @@ export default function CheckOutModal({
           return;
         }
       }
-      
-      // Calcular o valor total para exibição
-      const totalAmount = reservation.total_amount + consumptions.reduce((sum, c) => sum + c.total_amount, 0);
       
       // Realizar o check-out
       await onConfirm();
@@ -347,6 +362,7 @@ export default function CheckOutModal({
                 <CheckoutSummary 
                   reservation={reservation}
                   consumptions={consumptions}
+                  pricing={pricing}
                 />
               </div>
               
@@ -430,7 +446,7 @@ export default function CheckOutModal({
                   <div className="flex justify-between items-center mt-2">
                     <span className="text-sm text-gray-600">Valor total a pagar:</span>
                     <span className="font-bold text-primary-600">
-                      R$ {(reservation.total_amount + consumptions.reduce((sum, c) => sum + c.total_amount, 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      R$ {totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
                 </div>

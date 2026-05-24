@@ -24,21 +24,62 @@ interface RoomConsumption {
 interface CheckoutSummaryProps {
   reservation: Reservation;
   consumptions: RoomConsumption[];
+  pricing?: {
+    isLate: boolean;
+    hoursExceeded: number;
+    originalNights: number;
+    currentNights: number;
+    extraNights: number;
+    originalStayAmount: number;
+    recalculatedStayAmount: number;
+    lateCheckoutFee: number;
+    pricePerNight: number;
+  } | null;
 }
 
-export default function CheckoutSummary({ reservation, consumptions }: CheckoutSummaryProps) {
+export default function CheckoutSummary({ reservation, consumptions, pricing }: CheckoutSummaryProps) {
   const totalConsumptions = consumptions.reduce((sum, c) => sum + c.total_amount, 0);
-  const totalAmount = reservation.total_amount + totalConsumptions;
+  const stayAmount = pricing?.isLate ? pricing.recalculatedStayAmount : reservation.total_amount;
+  const totalAmount = stayAmount + totalConsumptions;
   
   return (
     <div className="space-y-4">
       <div className="space-y-3">
-        <div className="flex justify-between">
-          <span className="text-gray-600">Valor da Estadia:</span>
-          <span className="font-medium">
-            R$ {reservation.total_amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </span>
-        </div>
+        {pricing?.isLate ? (
+          <>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Diárias Originais ({pricing.originalNights} noites):</span>
+              <span className="font-medium text-gray-700">
+                R$ {pricing.originalStayAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+            
+            <div className="flex justify-between text-sm text-orange-600 font-medium">
+              <span>
+                Acréscimo Check-out Tardio {pricing.extraNights > 0 
+                  ? `(Diária Cheia)` 
+                  : `(${pricing.hoursExceeded}h extra(s) fracionada(s))`}:
+              </span>
+              <span>
+                + R$ {pricing.lateCheckoutFee.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+
+            <div className="flex justify-between border-b pb-2 text-sm font-medium">
+              <span className="text-gray-700">Subtotal da Estadia:</span>
+              <span className="text-gray-800">
+                R$ {pricing.recalculatedStayAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+          </>
+        ) : (
+          <div className="flex justify-between">
+            <span className="text-gray-600">Valor da Estadia:</span>
+            <span className="font-medium">
+              R$ {reservation.total_amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </span>
+          </div>
+        )}
         
         <div className="flex justify-between">
           <span className="text-gray-600">Consumos:</span>

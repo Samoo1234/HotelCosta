@@ -417,14 +417,30 @@ export default function ReservationDetailsPage() {
   let daysUntilCheckout = null;
   let isCheckoutSoon = false;
   
+  const isOpenCheckout = reservation && !reservation.check_out_date;
+  const effectiveCheckOutDateStr = isOpenCheckout 
+    ? new Date().toLocaleDateString('en-CA') // YYYY-MM-DD
+    : reservation?.check_out_date || '';
+
+  const pricePerNight = reservation?.room?.price_per_night || 0;
+  let originalTotalAmount = reservation?.total_amount || 0;
+
+  if (isOpenCheckout && reservation?.check_in_date) {
+    const checkIn = new Date(reservation.check_in_date + 'T00:00:00');
+    const checkOut = new Date(effectiveCheckOutDateStr + 'T00:00:00');
+    const diffDays = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24));
+    const nights = Math.max(1, diffDays);
+    originalTotalAmount = pricePerNight * nights;
+  }
+
   // Calcular precificação e alertas para check-out tardio
-  const pricing = reservation && hotelSettings && reservation.status === 'checked_in' && reservation.check_out_date
+  const pricing = reservation && hotelSettings && reservation.status === 'checked_in'
     ? calculateCheckoutPricing(
         reservation.check_in_date,
-        reservation.check_out_date,
+        effectiveCheckOutDateStr,
         hotelSettings.check_out_time,
-        reservation.room?.price_per_night || 0,
-        reservation.total_amount
+        pricePerNight,
+        originalTotalAmount
       )
     : null;
 
@@ -530,7 +546,7 @@ export default function ReservationDetailsPage() {
               <p className="text-lg font-bold text-gray-900">
                 {reservation.check_out_date 
                   ? Math.ceil((new Date(reservation.check_out_date).getTime() - new Date(reservation.check_in_date).getTime()) / (1000 * 60 * 60 * 24))
-                  : 'Em aberto'
+                  : `${Math.max(1, Math.ceil((new Date(effectiveCheckOutDateStr).getTime() - new Date(reservation.check_in_date).getTime()) / (1000 * 60 * 60 * 24)))} (Aberto)`
                 }
               </p>
             </div>
@@ -545,7 +561,7 @@ export default function ReservationDetailsPage() {
             <div className="ml-3">
               <p className="text-sm font-medium text-gray-600">Total</p>
               <p className="text-lg font-bold text-gray-900">
-                R$ {(pricing?.isLate ? pricing.recalculatedStayAmount : reservation.total_amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                R$ {(pricing ? pricing.recalculatedStayAmount : originalTotalAmount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
             </div>
           </div>

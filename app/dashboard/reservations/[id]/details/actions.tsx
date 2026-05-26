@@ -419,17 +419,35 @@ export async function performCheckOut(reservationId: string, consumptions: any[]
     const room = Array.isArray(reservation.room) ? reservation.room[0] : reservation.room;
     const pricePerNight = room?.price_per_night ? parseFloat(room.price_per_night) : 0;
     
+    // Obter data de check-out efetiva (hoje)
+    const todayStr = getLocalISOString().split('T')[0];
+    
+    // Se a reserva tem check-out em aberto (check_out_date é nulo)
+    const isOpenCheckout = !reservation.check_out_date;
+    const effectiveCheckOutDateStr = isOpenCheckout ? todayStr : reservation.check_out_date;
+    
+    let originalTotalAmount = reservation.total_amount;
+    
+    if (isOpenCheckout) {
+      // Recalcular as diárias originais com base no check-in e check-out efetivo (hoje)
+      const checkIn = new Date(reservation.check_in_date + 'T00:00:00');
+      const checkOut = new Date(effectiveCheckOutDateStr + 'T00:00:00');
+      const diffDays = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24));
+      const nights = Math.max(1, diffDays);
+      originalTotalAmount = pricePerNight * nights;
+    }
+
     // Recalcular precificação considerando check-out tardio
     const pricing = calculateCheckoutPricing(
       reservation.check_in_date || '',
-      reservation.check_out_date || '',
+      effectiveCheckOutDateStr || '',
       checkOutTime,
       pricePerNight,
-      reservation.total_amount
+      originalTotalAmount
     );
     
-    const stayAmount = pricing.isLate ? pricing.recalculatedStayAmount : reservation.total_amount;
-    const stayDuration = pricing.isLate ? pricing.currentNights : Math.ceil((new Date(reservation.check_out_date || '').getTime() - new Date(reservation.check_in_date || '').getTime()) / (1000 * 60 * 60 * 24));
+    const stayAmount = pricing.recalculatedStayAmount;
+    const stayDuration = pricing.currentNights;
     
     // Calcular o valor total (estadia recalculada + consumos)
     const totalAmount = stayAmount + consumptions.reduce((sum, c) => sum + c.total_amount, 0);
@@ -507,7 +525,8 @@ export async function performCheckOut(reservationId: string, consumptions: any[]
       reservationId, 
       'checked_out', 
       {
-        total_amount: stayAmount // Atualiza o total_amount da reserva no banco!
+        total_amount: stayAmount, // Atualiza o total_amount da reserva no banco!
+        check_out_date: effectiveCheckOutDateStr // Salva a data real de check-out no banco!
       },
       consumptions
     );

@@ -81,17 +81,33 @@ export default function CheckOutModal({
   const hasUnpaidConsumptions = consumptions.some(c => c.status === 'pending');
   
   // Obter precificação e recálculo dinâmico por check-out tardio
-  const pricing = reservation && hotelSettings && reservation.check_out_date
+  const isOpenCheckout = !reservation.check_out_date;
+  const effectiveCheckOutDateStr = isOpenCheckout 
+    ? new Date().toLocaleDateString('en-CA') // Formato YYYY-MM-DD local do navegador
+    : reservation.check_out_date;
+
+  const pricePerNight = reservation.room?.price_per_night || 0;
+  let originalTotalAmount = reservation.total_amount;
+
+  if (isOpenCheckout && reservation.check_in_date) {
+    const checkIn = new Date(reservation.check_in_date + 'T00:00:00');
+    const checkOut = new Date(effectiveCheckOutDateStr + 'T00:00:00');
+    const diffDays = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24));
+    const nights = Math.max(1, diffDays);
+    originalTotalAmount = pricePerNight * nights;
+  }
+
+  const pricing = reservation && hotelSettings
     ? calculateCheckoutPricing(
         reservation.check_in_date,
-        reservation.check_out_date,
+        effectiveCheckOutDateStr,
         hotelSettings.check_out_time,
-        reservation.room?.price_per_night || 0,
-        reservation.total_amount
+        pricePerNight,
+        originalTotalAmount
       )
     : null;
 
-  const stayAmount = pricing?.isLate ? pricing.recalculatedStayAmount : reservation.total_amount;
+  const stayAmount = pricing ? pricing.recalculatedStayAmount : originalTotalAmount;
   const totalAmount = stayAmount + consumptions.reduce((sum, c) => sum + c.total_amount, 0);
   
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -265,7 +281,11 @@ export default function CheckOutModal({
             </div>
             <div>
               <p className="text-gray-600">Check-out</p>
-              <p className="font-medium">{formatDate(reservation.check_out_date)}</p>
+              <p className="font-medium">
+                {isOpenCheckout 
+                  ? `${formatDate(effectiveCheckOutDateStr)} (Hoje - Aberto)` 
+                  : formatDate(reservation.check_out_date)}
+              </p>
             </div>
           </div>
         </div>
